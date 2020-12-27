@@ -1,0 +1,2 @@
+v 3
+p robmv Stata module for robust multivariate estimation of location and covariance
