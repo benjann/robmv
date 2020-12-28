@@ -123,6 +123,8 @@ allowed; see {help weight}.
 {syntab :Main}
 {synopt :{opt bp(#)}}breakdown point, in percent; default is {cmd:bp(50)}
     {p_end}
+{synopt :{opt wh:ilferty}}obtain tuning constant using Wilson-Hilferty transformation
+    {p_end}
 {synopt :{opt k(#)}}custom tuning constant
     {p_end}
 
@@ -469,9 +471,18 @@ allowed; see {help weight}.
     {opt bp(#)} sets the breakdown point (in percent) with # being
     an integer number between 1 and 50. The default is {cmd:bp(50)}.
 
+{phang}{opt whilferty} obtains the tuning constant corresponding to the desired
+    breakdown point by applying the Wilson-Hilferty transformation to the tuning
+    constant of the univariate biweight function. The default is to obtain the
+    tuning constant by finding value {it:k} that solves {it:bp} = {it:b} /
+    ({it:k}^2/6), where {it:bp} is the desired breakdown point and {it:b} is
+    the Gaussian consistency parameter of the scale optimization problem.
+
 {phang}
-    {opt k(#)} sets the tuning constant for the biweight objective
-    function. Only one of {cmd:k()} and {cmd:bp()} is allowed.
+    {opt k(#)} sets the tuning constant to a custom value. Only one of
+    {cmd:k()} and {cmd:bp()} is allowed. The procedure used to compute the
+    breakdown point corresponding to {cmd:k()} depends on whether {cmd:whilferty}
+    is specified.
 
 {dlgtab:Algorithm}
 
@@ -987,6 +998,7 @@ allowed; see {help weight}.
 
 {synoptset 20 tabbed}{...}
 {p2col 7 20 24 2: Macros}{p_end}
+{synopt:{cmd:e(whilferty)}}{cmd:whilferty} or empty{p_end}
 {synopt:{cmd:e(noee)}}{cmd:noee} or empty{p_end}
 {synopt:{cmd:e(method)}}{cmd:random} or {cmd:exact}{p_end}
 {synopt:{cmd:e(relax)}}{cmd:relax} or empty{p_end}

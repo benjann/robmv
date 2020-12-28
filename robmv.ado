@@ -1,4 +1,4 @@
-*! version 1.0.0  27dec2020  Ben Jann
+*! version 1.0.1  28dec2020  Ben Jann
 
 capt findfile lmoremata.mlib
 if _rc {
@@ -79,7 +79,9 @@ program Display
             di as txt `c3' "Tuning constant" `c4' "= " as res %`wfmt'.0g e(k)
         }
         else if `"`e(subcmd)'"'=="s" {
-            di as txt `c3' "Tuning constant" `c4' "= " as res %`wfmt'.0g e(k)
+            if `"`e(whilferty)'"'!="" di as txt `c3' "Tuning const (wh)" _c
+            else                      di as txt `c3' "Tuning constant" _c
+            di `c4' "= " as res %`wfmt'.0g e(k)
             di as txt `c3' "Scale" `c4' "= " as res %`wfmt'.0g e(scale)
             di as txt `c3' "Algorithm" `c4' "= " as res %`wfmt's e(method)
             di as txt `c3' "Candidates" `c4' "= " as res %`wfmt'.0g e(nsamp)
@@ -361,6 +363,7 @@ program Estimate_s, eclass
         CORRelation                     /// report correlations, not covariances
         k(numlist >0 max=1)             /// tuning constant
         bp(numlist >=1 <=50 max=1)      /// breakdown point
+        WHilferty                       /// use Wilson-Hilferty transformation
         Nsamp(int 500)                  /// number of trial candidates
         CSTEPs(int 2)                   /// number of C-steps for refinement of trial candidates
         NKeep(int 10)                   /// number of "best" candidates to keep for final refinement
@@ -445,6 +448,7 @@ program Estimate_s, eclass
     eret local noee         "`noee'"
     eret local relax        "`relax'"
     eret local method       "`method'"
+    eret local whilferty    "`whilferty'"
     eret local predict      "robmv_p"
     eret scalar nvars     = `nvars'
     eret scalar rank      = `rank'
@@ -2422,12 +2426,14 @@ void st_mvS()
     if (S.c>=.) {
         S.bp = strtoreal(st_local("bp"))
         if (S.bp>=.) S.bp = 50
-        S.c = mvS_c_from_bp(S.bp/100, S.p)
+        if (st_local("whilferty")!="") S.c = mvS_c_from_bp_wh(S.bp, S.p)
+        else                           S.c = mvS_c_from_bp(S.bp/100, S.p)
         S.b = mvS_b_from_c(S.c, S.p)
     }
     else {
         S.b = mvS_b_from_c(S.c, S.p)
-        S.bp = S.b / (S.c^2/6) * 100
+        if (st_local("whilferty")!="") S.bp = mvS_bp_from_c_wh(S.c, S.p)
+        else                           S.bp = S.b / (S.c^2/6) * 100
     }
     
     // compute s-estimate
@@ -2465,6 +2471,26 @@ real scalar mvS_c_from_bp(real scalar bp, real scalar p)
         c0 = c
     }
     return(c)
+}
+
+// find tuning constant from bp using Wilson-Hilferty transformation
+real mvS_c_from_bp_wh(bp, p)
+{
+    real scalar k, d
+    
+    k = mm_biweight_k_bp(bp)
+    d = 2 / (9 * p)
+    return(sqrt(p * (k * sqrt(d) + (1-d))^3))
+}
+
+// find bp from tuning constant using Wilson-Hilferty transformation
+real mvS_bp_from_c_wh(c, p)
+{
+    real scalar k, d
+    
+    d = 2 / (9 * p)
+    k = ((c^2/p)^(1/3) + d - 1) / sqrt(d)
+    return(mm_biweight_bp(k)*100)
 }
 
 // compute target b from tuning constant (normal model)

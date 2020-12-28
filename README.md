@@ -19,5 +19,8 @@ or
 
 Main changes:
 
+    28dec2020 (version 1.0.1)
+    - added option -whilferty- in -robmv s-
+
     27dec2020 (version 1.0.0)
     - robmv released on GitHub
