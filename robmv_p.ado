@@ -1,4 +1,4 @@
-*! version 1.0.0  08jan2020  Ben Jann
+*! version 1.0.1  30dec2020  Ben Jann
 
 program define robmv_p
     version 11
@@ -12,14 +12,17 @@ program define robmv_p
     else if `"`e(subcmd)'"'=="m" {
         robmv_p_m `0'
     }
+    else if `"`e(subcmd)'"'=="s" {
+        robmv_p_m `0'
+    }
+    else if `"`e(subcmd)'"'=="mm" {
+        robmv_p_m `0'
+    }
     else if `"`e(subcmd)'"'=="mcd" {
         robmv_p_mcd `0'
     }
     else if `"`e(subcmd)'"'=="mve" {
         robmv_p_mcd `0'
-    }
-    else if `"`e(subcmd)'"'=="s" {
-        robmv_p_m `0'
     }
     else if `"`e(subcmd)'"'=="sd" {
         if `"`e(nofit)'"'!="" {
@@ -75,7 +78,7 @@ program define robmv_p_m
         exit
     }
     if "`weights'"!="" {
-        if inlist(`"`e(subcmd)'"',"s","sd") {
+        if inlist(`"`e(subcmd)'"',"s","mm","sd") {
             di as err "option {bf:weights} not allowed after {bf:robmv `e(subcmd)'}"
             exit 198
         }

@@ -1,4 +1,4 @@
-*! version 1.0.1  28dec2020  Ben Jann
+*! version 1.0.2  01jan2021  Ben Jann
 
 capt findfile lmoremata.mlib
 if _rc {
@@ -26,7 +26,7 @@ program robmv, eclass properties(svyb svyj)
     if `"`subcmd'"'==substr("classic", 1, max(2, strlen(`"`subcmd'"'))) {
         local subcmd "classic"
     }
-    local cmdlist "classic m s mve mcd sd"
+    local cmdlist "classic m s mm mve mcd sd"
     if !`:list subcmd in cmdlist' {
         di as err `"invalid subcommand: `subcmd'"'
         exit 198
@@ -78,10 +78,18 @@ program Display
             di as txt `c3' "Winsorizing (%)" `c4' "= " as res %`wfmt'.0g e(ptrim)
             di as txt `c3' "Tuning constant" `c4' "= " as res %`wfmt'.0g e(k)
         }
-        else if `"`e(subcmd)'"'=="s" {
-            if `"`e(whilferty)'"'!="" di as txt `c3' "Tuning const (wh)" _c
-            else                      di as txt `c3' "Tuning constant" _c
-            di `c4' "= " as res %`wfmt'.0g e(k)
+        else if inlist(`"`e(subcmd)'"',"s","mm") {
+            if `"`e(subcmd)'"'=="mm" {
+                if `"`e(whilferty)'"'!="" di as txt `c3' "S tuning c. (wh)" _c
+                else                      di as txt `c3' "S tuning constant" _c
+                di `c4' "= " as res %`wfmt'.0g e(k)
+                di as txt `c3' "M tuning constant" `c4' "= " as res %`wfmt'.0g e(k1)
+            }
+            else {
+                if `"`e(whilferty)'"'!="" di as txt `c3' "Tuning cons. (wh)" _c
+                else                      di as txt `c3' "Tuning constant" _c
+                di `c4' "= " as res %`wfmt'.0g e(k)
+            }
             di as txt `c3' "Scale" `c4' "= " as res %`wfmt'.0g e(scale)
             di as txt `c3' "Algorithm" `c4' "= " as res %`wfmt's e(method)
             di as txt `c3' "Candidates" `c4' "= " as res %`wfmt'.0g e(nsamp)
@@ -304,7 +312,7 @@ program Estimate_m, eclass
     // compute m-estimate
     tempname mu Cov K PTRIM BP C
     if "`correlation'"!="" tempname Corr
-    mata: st_huber()
+    mata: st_mvM()
     mat coln `mu'  = `varlist'
     mat coln `Cov' = `varlist'
     mat rown `Cov' = `varlist'
@@ -328,8 +336,7 @@ program Estimate_m, eclass
     mat `b' = `b', `tmp'
     eret post `b' [`weight'`exp0'], esample(`touse') obs(`N')
     local bppct = strofreal(`BP', "%5.3g")
-    local title             "Huber M-estimate (`bppct'% BP)"
-    eret local title        "`title'"
+    eret local title        "Huber M-estimate (`bppct'% BP)"
     eret local cmd          "robmv"
     eret local subcmd       "m"
     if "`correlation'"!="" eret local depvar "Corr"
@@ -364,15 +371,17 @@ program Estimate_s, eclass
         k(numlist >0 max=1)             /// tuning constant
         bp(numlist >=1 <=50 max=1)      /// breakdown point
         WHilferty                       /// use Wilson-Hilferty transformation
-        Nsamp(int 500)                  /// number of trial candidates
+        Nsamp(int 20)                   /// number of trial candidates
         CSTEPs(int 2)                   /// number of C-steps for refinement of trial candidates
-        NKeep(int 10)                   /// number of "best" candidates to keep for final refinement
+        NKeep(int 5)                    /// number of "best" candidates to keep for final refinement
         TOLerance(real 1e-12)           /// tolerance
         ITERate(integer `c(maxiter)')   /// max number of iterations
         relax                           /// do not return error if failure to converge
         NOEE                            /// do not use exact enumeration even if comb(N, p+1)<=nsamp()
+        /// MM-estimation (undocumented)
+        _mm(numlist >=70 <100 max=1)    /// efficiency 
         /// display options
-        Level(cilevel) noHEader noTABle *           ///
+        Level(cilevel) noHEader noTABle *  ///
         ]
     if "`k'"!="" & "`bp'"!="" {
         di as err "k() and bp() not both allowed"
@@ -409,7 +418,7 @@ program Estimate_s, eclass
     local varlist0 "`varlist'"
     
     // compute s-estimate
-    tempname mu Cov BP K SCALE
+    tempname mu Cov BP K K1 SCALE DELTA EFF
     if "`correlation'"!="" tempname Corr
     mata: st_mvS()
     mat coln `mu'  = `varlist'
@@ -435,10 +444,18 @@ program Estimate_s, eclass
     mat `b' = `b', `tmp'
     eret post `b' [`weight'`exp0'], esample(`touse') obs(`N')
     local bppct = strofreal(`BP', "%5.3g")
-    local title             "S-estimate (`bppct'% BP)"
-    eret local title        "`title'"
+    if "`_mm'"!="" {
+        local effpct = strofreal(`EFF', "%5.3g")
+        eret local title  "MM-estimate (`bppct'% BP; `effpct'% efficiency)"
+        eret local subcmd     "mm"
+        eret scalar efficiency = `EFF'
+        eret scalar k1         = `K1'
+    }
+    else {
+        eret local title      "S-estimate (`bppct'% BP)"
+        eret local subcmd     "s"
+    }
     eret local cmd          "robmv"
-    eret local subcmd       "s"
     if "`correlation'"!="" eret local depvar "Corr"
     else                   eret local depvar "Cov"
     eret local varlist      "`varlist'"
@@ -455,6 +472,7 @@ program Estimate_s, eclass
     eret scalar bp        = `BP'
     eret scalar k         = `K'
     eret scalar scale     = `SCALE'
+    eret scalar delta     = `DELTA'
     eret scalar nsamp     = `nsamp'
     eret scalar csteps    = `csteps'
     eret scalar nkeep     = `nkeep'
@@ -466,6 +484,20 @@ program Estimate_s, eclass
         eret matrix Corr = `Corr'
     }
     Return_clear
+end
+
+program Estimate_mm
+    // syntax
+    _parse comma lhs 0 : 0
+    syntax [, EFFiciency(numlist >=70 <100 max=1) * ]
+    if "`efficiency'"=="" local efficiency 95
+    // MM-estimate
+    Estimate_s `lhs', _mm(`efficiency') `options'
+end
+
+program Estimate_mm_parse_sopts
+    syntax [, CORRelation noHEader noTABle * ]
+    c_local sopts `sopts'
 end
 
 program Estimate_mcd, eclass
@@ -1095,10 +1127,10 @@ void st_classic()
 }
 
 /* ------------------------------------------------------------------------- */
-/* Monotone M-Estimate                                                       */
+/* M-Estimate                                                                */
 /* ------------------------------------------------------------------------- */
 
-struct huber_struct {
+struct mvM_struct {
     real scalar     n, N, p, rank, wgt, k, ptrim, bp, tol, iter, niter, relax, 
                     corr, c, cemp
     real rowvector  m
@@ -1107,10 +1139,10 @@ struct huber_struct {
 }
 
 // collect data and options, apply consistence correction and return results to Stata
-void st_huber()
+void st_mvM()
 {
     real scalar rc
-    struct huber_struct scalar S
+    struct mvM_struct scalar S
     
     // data 
     S.X = robmv_st_data("varlist", "touse") // will update local varlist
@@ -1156,23 +1188,23 @@ void st_huber()
         S.k = sqrt(S.p + 1)
         S.ptrim = 1 - chi2(S.p, S.k^2)
     }
-    S.bp = min((1/S.k^2, 1-S.p/S.k^2))
-    S.tol     = strtoreal(st_local("tolerance"))
-    S.iter    = strtoreal(st_local("iterate"))
-    S.relax   = (st_local("relax")!="")
-    S.c       = strtoreal(st_local("c"))
-    S.cemp    = (st_local("cemp")!="")
-    S.corr    = (st_local("correlation")!="")
+    S.bp    = min((1/S.k^2, 1-S.p/S.k^2))
+    S.tol   = strtoreal(st_local("tolerance"))
+    S.iter  = strtoreal(st_local("iterate"))
+    S.relax = (st_local("relax")!="")
+    S.c     = strtoreal(st_local("c"))
+    S.cemp  = (st_local("cemp")!="")
+    S.corr  = (st_local("correlation")!="")
 
-    // compute raw M estimate and apply consistency correction
-    rc = huber(S)
+    // compute M estimate and apply consistency correction
+    rc = mvM(S)
     if (rc) {
         display("{err}covariance matrix collapsed to zero")
         exit(error(498))
     }
     S.rank = S.p - diag0cnt(invsym(S.V))
     if (S.c>=.) {
-        S.c = huber_c(S, S.cemp)
+        S.c = mvM_huber_c(S, S.cemp)
     }
     S.V = S.V * S.c
     if (S.corr) S.C = robmv_corr(S.V)
@@ -1189,8 +1221,8 @@ void st_huber()
     st_local("niter", strofreal(S.niter))
 }
 
-// compute monotone M-estimate estimate
-real scalar huber(struct huber_struct scalar S)
+// compute M-estimate estimate
+real scalar mvM(struct mvM_struct scalar S)
 {
     real scalar    i
     real rowvector m
@@ -1203,13 +1235,14 @@ real scalar huber(struct huber_struct scalar S)
     S.m = mm_median(S.X, S.w)
     S.V = (1/invnormal(0.75))^2 * diag(mm_median(abs(S.X:-S.m), S.w):^2)
     printf("{txt}done\n")
+    
     // reweighting algorithm
     printf("{txt}iterating M-estimate ... ")
     displayflush()
     for (i=1; i<=S.iter; i++) {
         m = S.m
         V = S.V
-        w = huber_w(S)
+        w = mvM_huber_w(S)
         S.m = mean(S.X, S.w :* w)
         S.V = crossdev(S.X, S.m, S.w :* w:^2, S.X, S.m) / (S.N - 1)
         if (mreldif(S.m, m) <= S.tol) {
@@ -1227,36 +1260,36 @@ real scalar huber(struct huber_struct scalar S)
     return(allof(S.V, 0))
 }
 
-// weighting function: W1 = huber_w(), W2 = huber_w()^2
-real colvector huber_w(struct huber_struct scalar S)
+// weighting function
+real colvector mvM_huber_w(struct mvM_struct scalar S)
 {
     if (S.ptrim==0) return(J(S.n,1,1)) // classical estimate
-    return(mm_huber_w(sqrt(robmv_maha(S.X, S.m, S.V)), S.k)) 
+    return(mm_huber_w(sqrt(robmv_maha(S.X, S.m, S.V)), S.k))
 }
 
-// consistency correction
-real scalar huber_c(struct huber_struct scalar S, real scalar empirical)
+// Huber consistency correction
+real scalar mvM_huber_c(struct mvM_struct scalar S, real scalar empirical)
 {
     if (S.ptrim==0) return(1) // classical estimate
-    if (empirical) return(_huber_c_empirical(S))
-    return(1 / mm_finvert(S.p, &_huber_c_int(), 1e-10, 1, 0, 1000, 
+    if (empirical) return(_mvM_huber_c_empirical(S))
+    return(1 / mm_finvert(S.p, &_mvM_huber_c_int(), 1e-10, 1, 0, 1000, 
         (S.p, S.k)))
 }
-real scalar _huber_c_empirical(struct huber_struct scalar S)
+real scalar _mvM_huber_c_empirical(struct mvM_struct scalar S)
 {
     real colvector d2 
     d2 = robmv_maha(S.X, S.m, S.V)
     return(mm_median(d2, S.w) / invchi2(S.p,.5))
 }
-real scalar _huber_c_int(real scalar c, real rowvector args)
+real scalar _mvM_huber_c_int(real scalar c, real rowvector args)
 {
     real scalar p, k
     
     p = args[1]; k = args[2]
-    return(mm_integrate_sr(&_huber_c_int_eval(), 0, invchi2tail(p, 1e-6), 
+    return(mm_integrate_sr(&_mvM_huber_c_int_eval(), 0, invchi2tail(p, 1e-6), 
         10000, 0, c, p, k))
 }
-real colvector _huber_c_int_eval(real colvector z, real scalar c, 
+real colvector _mvM_huber_c_int_eval(real colvector z, real scalar c, 
     real scalar p, real scalar k)
 {
     real scalar d
@@ -1279,9 +1312,9 @@ struct mcd_struct {
     real matrix     X, V, iV, C
     pointer (real rowvector) vector mm
     pointer (real matrix)    vector VV
-    // for S estimation
-    real scalar     c, b, sc
-    real colvector  u
+    // for S/MM estimation
+    real scalar     c, b, sc, eff, c1
+    real colvector  u2
     // additional variables for large-N algorithm
     real scalar                     nsub, ksub, nmerged, n0, h0, nsamp0
     real rowvector                  DD0, RR0
@@ -2436,11 +2469,32 @@ void st_mvS()
         else                           S.bp = S.b / (S.c^2/6) * 100
     }
     
+    // MM
+    S.eff = strtoreal(st_local("_mm")) / 100
+    if (S.eff<.) {
+        S.c1 = mvMM_c_from_eff(S.eff, S.p)
+        if (S.c1<S.c) {
+            S.eff = mm_finvert(S.c, &mvMM_c_from_eff(), S.eff, 1, 0, 1000, S.p)
+            S.c1  = S.c
+            display("{txt}(S estimate exceeds desired efficiency;"+
+                " resetting tuning constant of M estimate)")
+        }
+        st_numscalar(st_local("EFF"), S.eff * 100)
+        st_numscalar(st_local("K1"), S.c1)
+    }
+    
     // compute s-estimate
     rc = mvS_psub(S)
     if (rc) {
-        display("{err}... error ...")
+        display("{err}S estimation failed; no non-singular subset found")
         exit(error(498))
+    }
+    if (S.eff<.) { // MM-estimation
+        rc = mvMM(S)
+        if (rc) {
+            display("{err}covariance matrix collapsed to zero")
+            exit(error(498))
+        }
     }
     S.R = S.p - diag0cnt(invsym(S.V))
     if (S.corr) S.C = robmv_corr(S.V)
@@ -2451,8 +2505,9 @@ void st_mvS()
     st_numscalar(st_local("BP"), S.bp)
     st_numscalar(st_local("K"), S.c)
     st_numscalar(st_local("SCALE"), S.sc)
-    st_matrix(st_local("mu"),   S.m)
-    st_matrix(st_local("Cov"),  S.V)
+    st_numscalar(st_local("DELTA"), S.b)
+    st_matrix(st_local("mu"), S.m)
+    st_matrix(st_local("Cov"), S.V)
     st_local("rank", strofreal(S.R))
     if (S.corr) st_matrix(st_local("Corr"), S.C)
 }
@@ -2501,7 +2556,6 @@ real scalar mvS_b_from_c(real scalar c, real scalar p)
                 - (p+4)/(3*c^2) * chi2(p+6, c^2)))
         + c^2/6 * (1 - chi2(p, c^2)))
 }
-
 
 // compute S estimate based on p-subsets
 real scalar mvS_psub(struct mcd_struct scalar S)
@@ -2588,26 +2642,44 @@ void mvS_psub_isteps(struct mcd_struct scalar S)
     
     S.V  = S.D^(-1/S.p) * S.V  // compute Gamma
     S.iV = S.D^(1/S.p)  * S.iV // (inverse of Gamma)
-    S.u  = sqrt(_robmv_maha(S.X, S.m, S.iV))
-    S.sc = mm_median(S.u, S.w)
+    S.u2 = _robmv_maha(S.X, S.m, S.iV)
+    S.sc = sqrt(mm_median(S.u2, S.w))
     for (j=1; j<=S.csteps; j++) {
-        _mvS_psub_istep(S)
+        _mvS_psub_istep_sc(S)
+        _mvS_psub_istep_G(S, S.c)
     }
 }
 
-void _mvS_psub_istep(struct mcd_struct scalar S)
+void _mvS_psub_istep_sc(struct mcd_struct scalar S)
 {
-    real colvector w
-    
-    S.sc = S.sc * sqrt(mean(mm_biweight_rho(S.u/S.sc, S.c), S.w) / S.b)
-    w    = S.u / S.sc
-    w    = mm_biweight_psi(w, S.c) :/ w :* S.w
-    w    = w * (S.n / quadsum(w))
-    S.V  = meanvariance(S.X, w)
+    S.sc = S.sc * sqrt(mean(mvS_biweight_rho(S.u2, S.sc, S.c), S.w) / S.b)
+}
+
+void _mvS_psub_istep_G(struct mcd_struct scalar S, real scalar c)
+{
+    S.u2 = mvS_biweight_w(S.u2, S.sc, c) :* S.w
+    S.u2 = S.u2 * (S.n / quadsum(S.u2))
+    S.V  = meanvariance(S.X, S.u2)
     S.m  = S.V[1,.]
     S.V  = S.V[|2,1 \ .,.|]
-    S.V  = det(S.V)^(-1/S.p) * S.V  // compute Gamma
-    S.u  = sqrt(robmv_maha(S.X, S.m, S.V))
+    S.V  = det(S.V)^(-1/S.p) * S.V  // => Gamma
+    S.u2 = robmv_maha(S.X, S.m, S.V)
+}
+
+real colvector mvS_biweight_rho(real colvector xsq, real scalar s, real scalar k)
+{
+    real colvector x2
+
+    x2 = xsq / (s*k)^2
+    return(k^2/6 * (1 :- (1 :- x2):^3):^(x2:<=1))
+}
+
+real colvector mvS_biweight_w(real colvector xsq, real scalar s, real scalar k)
+{
+    real colvector x2
+
+    x2 = xsq / (s*k)^2
+    return(((1 :- x2):^2) :* (x2:<=1))
 }
 
 void mvS_psub_keep(struct mcd_struct scalar S, real scalar max)
@@ -2616,15 +2688,15 @@ void mvS_psub_keep(struct mcd_struct scalar S, real scalar max)
     
     if (max>=.) max = 1
     else if (S.DD[S.nkeep]<.) { // (skip this for first nkeep candidates)
-        if (mean(mm_biweight_rho(S.u/S.DD[max], S.c), S.w)>=S.b) {
+        if (mean(mvS_biweight_rho(S.u2, S.DD[max], S.c), S.w)>=S.b) {
             // candidate can be dropped; do not need to optimize scale
             return
         }
     }
     // improve scale until convergence
     for (j=1; j<=S.iter; j++) {
-        sc0  = S.sc
-        S.sc = S.sc * sqrt(mean(mm_biweight_rho(S.u/S.sc, S.c), S.w) / S.b)
+        sc0 = S.sc
+        _mvS_psub_istep_sc(S)
         if (reldif(S.sc, sc0)<=S.tol) break
     }
     if (S.relax==0) {
@@ -2662,11 +2734,13 @@ real scalar mvS_psub_final(struct mcd_struct scalar S)
         S.sc = S.DD[i]
         S.m  = *S.mm[i]
         S.V  = *S.VV[i]
-        S.u  = sqrt(robmv_maha(S.X, S.m, S.V))
+        S.u2 = robmv_maha(S.X, S.m, S.V)
+        _mvS_psub_istep_G(S, S.c)
         // refine results until convergence
         for (j=1; j<=S.iter; j++) {
             sc0 = S.sc
-            _mvS_psub_istep(S)
+            _mvS_psub_istep_sc(S)
+            _mvS_psub_istep_G(S, S.c)
             if (reldif(S.sc, sc0)<=S.tol) break
         }
         if (S.relax==0) {
@@ -2693,6 +2767,74 @@ real scalar mvS_psub_final(struct mcd_struct scalar S)
     S.m = *S.mm[min]
     S.V = *S.VV[min] * S.sc^2
     return(0)
+}
+
+// compute MM estimate based on S
+real scalar mvMM(struct mcd_struct scalar S)
+{
+    real scalar    i
+    real rowvector m
+    real matrix    V
+
+    printf("{txt}fitting redescending M-estimate ...")
+    displayflush()
+    S.V  = S.V / S.sc^2 // => Gamma
+    S.u2 = robmv_maha(S.X, S.m, S.V)
+    for (i=1; i<=S.iter; i++) {
+        m = S.m; V = S.V
+        _mvS_psub_istep_G(S, S.c1)
+        if (mreldif(S.m, m) <= S.tol) {
+            if (mreldif(S.V, V) <= S.tol) break
+        }
+        if (i==S.iter) {
+            if (S.relax) break
+            display("")
+            _error(3360, "failure to converge")
+        }
+    }
+    S.V = S.V * S.sc^2
+    printf("{txt} done\n")
+    displayflush()
+    return(allof(S.V, 0))
+}
+
+// find tuning constant for MM estimator
+// the code is based on function .csolve.bw.MM in file CovMMest.R from R-package
+// 'rrcov' (version 1.5-5, 2020-07-31); .csolve.bw.MM itself is based on code
+// provided by Salibian-Barrera, Van Aelst, and Willems (2006) at
+// http://users.ugent.be/∼svaelst/software/MMPCAboot.html (which does no longer
+// seem to be available)
+real scalar mvMM_c_from_eff(real scalar eff, real scalar p)
+{
+    real scalar tol, i, c, c0 
+    
+    i   = 1000
+    tol = 1e-8
+    c0  = -.4024 + 2.2539 * sqrt(p)
+    for (;i;i--) {
+        c = c0 * eff * _mvMM_c_from_eff_sigma(p, c0)
+        if(abs(c0-c) <= tol) break
+        c0 = c
+    }
+    return(c)
+}
+real scalar _mvMM_c_from_eff_sigma(real scalar p, real scalar k)
+{
+    real scalar g, s, c2, c4, c6, c8, c10, c12
+    
+    c2  = _mvMM_c_from_eff_chi(p,  2, k)
+    c4  = _mvMM_c_from_eff_chi(p,  4, k)
+    c6  = _mvMM_c_from_eff_chi(p,  6, k)
+    c8  = _mvMM_c_from_eff_chi(p,  8, k)
+    c10 = _mvMM_c_from_eff_chi(p, 10, k)
+    c12 = _mvMM_c_from_eff_chi(p, 12, k)
+    g   = (c2-6*c4/(k^2)+5*c6/(k^4) + (p+1)*(c2-2*c4/(k^2)+c6/(k^4)))/(p+2)
+    s   = c4 - 4*c6/(k^2) + 6*c8/(k^4) - 4*c10/(k^6) + c12/(k^8)
+    return(s / (g^2) * p/(p+2))
+}
+real scalar _mvMM_c_from_eff_chi(real scalar p, real scalar a, real scalar k)
+{
+    return(exp(lngamma((p+a)/2) - lngamma(p/2)) * 2^(a/2) * chi2(p+a, k^2))
 }
 
 /* ------------------------------------------------------------------------- */

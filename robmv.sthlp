@@ -1,5 +1,5 @@
 {smcl}
-{* 27dec2020}{...}
+{* 01jan2021}{...}
 {hi:help robmv}{...}
 {right:{browse "http://github.com/benjann/robmv/"}}
 {hline}
@@ -28,6 +28,12 @@
 {p 8 15 2}
     {cmd:robmv} {opt s} {varlist} {ifin} {weight}
     [{cmd:,} {help robmv##s_opt:{it:s_options}} {help robmv##opt:{it:general_options}} ]
+
+{pstd}MM-estimator
+
+{p 8 15 2}
+    {cmd:robmv} {opt mm} {varlist} {ifin} {weight}
+    [{cmd:,} {help robmv##mm_opt:{it:mm_options}} {help robmv##opt:{it:general_options}} ]
 
 {pstd}Minimum Volume Ellipsoid (MVE) estimator
 
@@ -129,13 +135,13 @@ allowed; see {help weight}.
     {p_end}
 
 {syntab :Algorithm}
-{synopt :{opt n:samp(#)}}number of trial candidates; default is {cmd:nsamp(500)}
+{synopt :{opt n:samp(#)}}number of trial candidates; default is {cmd:nsamp(20)}
     {p_end}
 {synopt :{opt cstep:s(#)}}number C-steps applied to trial
     candidates; default is {cmd:csteps(2)}
     {p_end}
 {synopt :{opt nk:eep(#)}}number of candidates kept for final refinement;
-    default is {cmd:nkeep(10)}
+    default is {cmd:nkeep(5)}
     {p_end}
 {synopt :{opt tol:erance(#)}}tolerance for candidate scale refinement and final refinement; default is
     {cmd:tolerance(1e-12)}
@@ -146,6 +152,15 @@ allowed; see {help weight}.
 {synopt :{opt relax}}do not return error if convergence is not reached
     {p_end}
 {synopt :{opt noee}}do not use exact enumeration even if feasible
+    {p_end}
+{synoptline}
+
+{synoptset 21 tabbed}{...}
+{marker mm_opt}{col 5}{it:{help robmv##mm_options:mm_options}}{col 28}Description
+{synoptline}
+{synopt :{opt eff:iciency(#)}}desired efficiency, in percent; default is {cmd:efficiency(95)}
+    {p_end}
+{synopt : {help robmv##s_opt:{it:s_options}}}options as for {cmd:robreg s}
     {p_end}
 {synoptline}
 
@@ -307,9 +322,13 @@ allowed; see {help weight}.
     solutions are handled as suggested by Maronna et al. (2006, p. 184-185).
 
 {pstd}
-    {cmd:robmv s} computes an S-estimate estimate of
+    {cmd:robmv s} computes an S-estimate of
     location and covariance (Lopuha{c a:} 1989) using the FastS algorithm
     as described in Hubert et al. (2013).
+
+{pstd}
+    {cmd:robmv mm} computes an MM-estimate of location and covariance
+    (Salibian-Barrera et al. 2006).
 
 {pstd}
     {cmd:robmv mve} computes the Minimum Volume Ellipsoid (MVE) estimator
@@ -468,8 +487,8 @@ allowed; see {help weight}.
 {dlgtab:Main}
 
 {phang}
-    {opt bp(#)} sets the breakdown point (in percent) with # being
-    an integer number between 1 and 50. The default is {cmd:bp(50)}.
+    {opt bp(#)} sets the breakdown point (in percent) with # in [1,50]. The 
+    default is {cmd:bp(50)}.
 
 {phang}{opt whilferty} obtains the tuning constant corresponding to the desired
     breakdown point by applying the Wilson-Hilferty transformation to the tuning
@@ -488,7 +507,7 @@ allowed; see {help weight}.
 
 {phang}
     {opt nsamp(#)} specifies the number of trial candidates to be evaluated in the
-    search algorithm. The default is {cmd:nsamp(500)}.
+    search algorithm. The default is {cmd:nsamp(20)}.
 
 {phang}
     {opt csteps(#)} sets the number of improvement steps (C-steps) applied when
@@ -496,7 +515,7 @@ allowed; see {help weight}.
 
 {phang}
     {opt nkeep(#)} sets the number of best trial candidates kept for final
-    refinement. The default is {cmd:nkeep(10)}.
+    refinement. The default is {cmd:nkeep(5)}.
 
 {phang}
     {opt tolerance(#)} sets the tolerance for the candidate scale refinements
@@ -523,6 +542,17 @@ allowed; see {help weight}.
     enumerated. Given the low default value of {cmd:nsamp()}, exact enumeration
     will only be used in very small samples. Set {cmd:nsamp()} to comb(N, p+1),
     to enforce exact enumeration of (p+1)-subsets.
+
+
+{marker mm_options}{...}
+{title:Additional options for robmv mm}
+
+{phang}
+    {opt efficiency(#)} sets the desired gaussian efficiency (in percent) with # 
+    in [70,100). The default is {cmd:efficiency(95)}.
+
+{phang}
+    {help robmv##s_options:{it:s_options}} are additional options as for {cmd:robreg s}.
 
 
 {marker mve_options}{...}
@@ -919,6 +949,7 @@ allowed; see {help weight}.
         . {stata robmv classic price mpg weight length}
         . {stata robmv m price mpg weight length}
         . {stata robmv s price mpg weight length}
+        . {stata robmv mm price mpg weight length}
         . {stata robmv mve price mpg weight length}
         . {stata robmv mcd price mpg weight length}
         . {stata robmv sd price mpg weight length}
@@ -983,18 +1014,21 @@ allowed; see {help weight}.
 {synopt:{cmd:e(relax)}}{cmd:relax} or empty{p_end}
 
 {pstd}
-{cmd:robmv s} additionally stores the following in {cmd:e()}:
+{cmd:robmv s} and {cmd:robmv mm} additionally store the following in {cmd:e()}:
 
 {synoptset 20 tabbed}{...}
 {p2col 7 20 24 2: Scalars}{p_end}
 {synopt:{cmd:e(bp)}}breakdown point{p_end}
 {synopt:{cmd:e(k)}}tuning constant{p_end}
+{synopt:{cmd:e(delta)}}normal consistency parameter{p_end}
 {synopt:{cmd:e(nsamp)}}number of trial candidates{p_end}
 {synopt:{cmd:e(csteps)}}number of C-steps for trial candidates{p_end}
 {synopt:{cmd:e(nkeep)}}number of best candidates for final refinement{p_end}
 {synopt:{cmd:e(tolerance)}}tolerance for candidate scale refinement and final refinement{p_end}
 {synopt:{cmd:e(iterate)}}maximum number of iterations for candidate scale refinement and final refinement{p_end}
 {synopt:{cmd:e(scale)}}scale estimate{p_end}
+{synopt:{cmd:e(efficiency)}}efficiency, in percent ({cmd:robreg mm} only){p_end}
+{synopt:{cmd:e(k1)}}tuning constant for M estimate ({cmd:robreg mm} only){p_end}
 
 {synoptset 20 tabbed}{...}
 {p2col 7 20 24 2: Macros}{p_end}
@@ -1130,6 +1164,11 @@ allowed; see {help weight}.
 {phang}
     Rousseeuw, P.J., K. Van Driessen (1999). A Fast Algorithm for the
     Minimum Covariance Determinant Estimator. Technometrics 41(3): 212-223.
+
+{phang}
+    Salibian-Barrera, M., S. Van Aelst, G. Willems (2006). Principal Components Analysis
+    Based on Multivariate MM Estimators With Fast and Robust Bootstrap. Journal of 
+    the American Statistical Association 101(475):1198-1211.
 
 {phang}
     Verardi, V., C. Vermandele (2016). Outlier identification

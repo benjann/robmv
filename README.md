@@ -19,6 +19,10 @@ or
 
 Main changes:
 
+    01jan2021 (version 1.0.2)
+    - robreg mm added
+    - robreg s failed to fully optimize the final candidates; this is fixed
+
     28dec2020 (version 1.0.1)
     - added option -whilferty- in -robmv s-
 
