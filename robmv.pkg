@@ -3,7 +3,7 @@ d robmv: Stata module for robust multivariate estimation of location and covaria
 d 
 d Author: Ben Jann, University of Bern, ben.jann@soz.unibe.ch
 d
-d Distribution-Date: 20210101
+d Distribution-Date: 20210102
 f robmv.ado
 f robmv_p.ado
 f robmv.sthlp

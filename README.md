@@ -19,6 +19,11 @@ or
 
 Main changes:
 
+    02jan2021 (version 1.0.3)
+    - robmv mm now has a -location- option
+    - correlation matrix is now always returned in e(Corr)
+    - various smaller changes and fixes
+
     01jan2021 (version 1.0.2)
     - robmv mm added
     - robmv s failed to fully optimize the final candidates; this is fixed

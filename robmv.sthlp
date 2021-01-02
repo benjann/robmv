@@ -1,5 +1,5 @@
 {smcl}
-{* 01jan2021}{...}
+{* 02jan2021}{...}
 {hi:help robmv}{...}
 {right:{browse "http://github.com/benjann/robmv/"}}
 {hline}
@@ -17,19 +17,19 @@
     {cmd:robmv} {opt cl:assic} {varlist} {ifin} {weight}
     [{cmd:,} {help robmv##cl_opt:{it:classic_options}} {help robmv##opt:{it:general_options}} ]
 
-{pstd}M-estimator
+{pstd}M estimator
 
 {p 8 15 2}
     {cmd:robmv} {opt m} {varlist} {ifin} {weight}
     [{cmd:,} {help robmv##m_opt:{it:m_options}} {help robmv##opt:{it:general_options}} ]
 
-{pstd}S-estimator
+{pstd}S estimator
 
 {p 8 15 2}
     {cmd:robmv} {opt s} {varlist} {ifin} {weight}
     [{cmd:,} {help robmv##s_opt:{it:s_options}} {help robmv##opt:{it:general_options}} ]
 
-{pstd}MM-estimator
+{pstd}MM estimator
 
 {p 8 15 2}
     {cmd:robmv} {opt mm} {varlist} {ifin} {weight}
@@ -63,7 +63,9 @@
 {it:varlist} may contain factor variables; see {help fvvarlist}.{p_end}
 {p 4 6 2}
 {opt pweight}s, {opt aweight}s, {opt iweight}s, and {opt fweight}s are
-allowed; see {help weight}.
+allowed; see {help weight}{p_end}
+{p 4 6 2}(exception: {cmd:robmv mcd} and {cmd:robmv mve} do
+not allow {opt fweight}s)
 
 {synoptset 21 tabbed}{...}
 {marker opt}{col 5}{it:{help robmv##options:general_options}}{col 28}Description
@@ -109,14 +111,14 @@ allowed; see {help weight}.
 {syntab :Consistency correction}
 {synopt :{opt c(#)}}set custom consistency correction factor
     {p_end}
-{synopt :{opt cemp}}use alternative approach to compute normal consistency correction factor
+{synopt :{opt cemp}}use alternative approach to compute consistency correction factor
     {p_end}
 
 {syntab :Algorithm}
 {synopt :{opt tol:erance(#)}}tolerance for reweighting algorithm; default is
-    {cmd:tolerance(1e-12)}
+    {cmd:tolerance(1e-10)}
     {p_end}
-{synopt :{opt iter:ate(#)}}maximum iterations for reweighting algorithm;
+{synopt :{opt iter:ate(#)}}maximum number of iterations;
     default is as set by {helpb set maxiter}
     {p_end}
 {synopt :{opt relax}}do not return error if convergence is not reached
@@ -137,17 +139,16 @@ allowed; see {help weight}.
 {syntab :Algorithm}
 {synopt :{opt n:samp(#)}}number of trial candidates; default is {cmd:nsamp(20)}
     {p_end}
-{synopt :{opt cstep:s(#)}}number C-steps applied to trial
-    candidates; default is {cmd:csteps(2)}
+{synopt :{opt cstep:s(#)}}improvement steps applied to each trial
+    candidate; default is {cmd:csteps(2)}
     {p_end}
 {synopt :{opt nk:eep(#)}}number of candidates kept for final refinement;
     default is {cmd:nkeep(5)}
     {p_end}
-{synopt :{opt tol:erance(#)}}tolerance for candidate scale refinement and final refinement; default is
-    {cmd:tolerance(1e-12)}
+{synopt :{opt tol:erance(#)}}tolerance for refinements; default is
+    {cmd:tolerance(1e-10)}
     {p_end}
-{synopt :{opt iter:ate(#)}}maximum iterations for for candidate scale refinement
-    and final refinement; default is as set by {helpb set maxiter}
+{synopt :{opt iter:ate(#)}}maximum number of iterations; default is as set by {helpb set maxiter}
     {p_end}
 {synopt :{opt relax}}do not return error if convergence is not reached
     {p_end}
@@ -160,6 +161,8 @@ allowed; see {help weight}.
 {synoptline}
 {synopt :{opt eff:iciency(#)}}desired efficiency, in percent; default is {cmd:efficiency(95)}
     {p_end}
+{synopt :{opt loc:ation}}set location efficiency rather than shape efficiency
+    {p_end}
 {synopt : {help robmv##s_opt:{it:s_options}}}options as for {cmd:robreg s}
     {p_end}
 {synoptline}
@@ -170,9 +173,9 @@ allowed; see {help weight}.
 {syntab :Main}
 {synopt :{opt nore:weight}}report raw MVE estimate without reweighting step
     {p_end}
-{synopt :{opt bp(#)}}approximate breakdown point, in percent; default is {cmd:bp(50)}
+{synopt :{opt bp(#)}}breakdown point, in percent; default is {cmd:bp(50)}
     {p_end}
-{synopt :{opt alpha(#)}}cutoff for reweighting step, in percent; default is {cmd:alpha(2.5)}
+{synopt :{opt alpha(#)}}reweighting cutoff, in percent; default is {cmd:alpha(2.5)}
     {p_end}
 
 {syntab :Consistency correction}
@@ -194,9 +197,9 @@ allowed; see {help weight}.
 {syntab :Main}
 {synopt :{opt nore:weight}}report raw MCD estimate without reweighting step
     {p_end}
-{synopt :{opt bp(#)}}approximate breakdown point, in percent; default is {cmd:bp(50)}
+{synopt :{opt bp(#)}}breakdown point, in percent; default is {cmd:bp(50)}
     {p_end}
-{synopt :{opt alpha(#)}}cutoff for reweighting step, in percent; default is {cmd:alpha(2.5)}
+{synopt :{opt alpha(#)}}reweighting cutoff, in percent; default is {cmd:alpha(2.5)}
     {p_end}
 
 {syntab :Consistency correction}
@@ -210,20 +213,20 @@ allowed; see {help weight}.
 {syntab :Algorithm}
 {synopt :{opt n:samp(#)}}number of trial candidates; default is {cmd:nsamp(500)}
     {p_end}
-{synopt :{opt nsub(#)}}minimum subsample size; default is max(p*50, 300) where p is the number of variables
-    {p_end}
-{synopt :{opt ksub(#)}}maximum number of subsamples; default is {cmd:ksub(5)}
-    {p_end}
-{synopt :{opt cstep:s(#)}}number C-steps applied to trial
-    candidates; default is {cmd:csteps(2)}
+{synopt :{opt cstep:s(#)}}concentration steps applied to each trial
+    candidate; default is {cmd:csteps(2)}
     {p_end}
 {synopt :{opt nk:eep(#)}}number of candidates kept for final refinement;
     default is {cmd:nkeep(10)}
     {p_end}
-{synopt :{opt tol:erance(#)}}tolerance for final refinement; default is
-    {cmd:tolerance(1e-12)}
+{synopt :{opt nsub(#)}}minimum subsample size; default is max(p*50, 300); type {cmd:nsub(.)} to omit subsampling
     {p_end}
-{synopt :{opt iter:ate(#)}}maximum iterations for final refinement;
+{synopt :{opt ksub(#)}}maximum number of subsamples; default is {cmd:ksub(5)}
+    {p_end}
+{synopt :{opt tol:erance(#)}}tolerance for final refinement; default is
+    {cmd:tolerance(1e-10)}
+    {p_end}
+{synopt :{opt iter:ate(#)}}maximum number of iterations;
     default is as set by {helpb set maxiter}
     {p_end}
 {synopt :{opt relax}}do not return error if convergence is not reached
@@ -238,27 +241,21 @@ allowed; see {help weight}.
 {marker sd_opt}{col 5}{it:{help robmv##sd_options:sd_options}}{col 28}Description
 {synoptline}
 {syntab :Main}
-{synopt :{opt h:uber}}use a Huber-type function to down-weight
-    outliers when computing the location and covariance estimate; the default is
-    to use a rectangular function (i.e. exclude the outliers)
+{synopt :{opt h:uber}}use a Huber-type rather than rectangular function
+    to down-weight outliers
     {p_end}
-{synopt :{opt alpha(#)}}outlier percentage under normality; default is {cmd:alpha(2.5)}; {cmd:alpha()}
-    has no effect if {cmd:cutoff()} is specified
+{synopt :{opt alpha(#)}}outlier percentage under normality; default is {cmd:alpha(2.5)}
     {p_end}
-{synopt :{opt asym:metric}[{cmd:(}{it:#}{cmd:)}]}compute generalized SD distances; {it:#}
-    sets the breakdown point, in percent (default is 10); {it:#} has no effect if
-    {cmd:cutoff()} is specified
+{synopt :{opt asym:metric}[{cmd:(}{it:#}{cmd:)}]}compute generalized SD distances
     {p_end}
-{synopt :{opt cut:off(#)}}cutoff value for outlier identification; default is to
-    compute the cutoff from the settings in {cmd:alpha()} and {cmd:asymmetric()}
+{synopt :{opt cut:off(#)}}set custom cutoff value for outlier identification
     {p_end}
 {synopt :{opt nofit}}do not compute the location and covariance estimate
     {p_end}
 
 {syntab :Generate}
-{synopt :{cmdab:gen:erate(}{it:names}{cmd:)}}store a variable containing the
-    SD distances, an outlier indicator, and a variable containing the weights
-    used to compute the location and covariance estimate
+{synopt :{cmdab:gen:erate(}{it:names}{cmd:)}}store SD distances, outlier
+    indicator, and weights
     {p_end}
 {synopt :{opt r:eplace}}allow overwriting existing variables
     {p_end}
@@ -274,7 +271,7 @@ allowed; see {help weight}.
     {p_end}
 {synopt :{opt nostd}}omit standardization (not recommended)
     {p_end}
-{synopt :{opt control:s(spec)}}partial out effects of controls from distances
+{synopt :{opt control:s(spec)}}partial out effects of covariates
     {p_end}
 {synoptline}
 
@@ -317,17 +314,17 @@ allowed; see {help weight}.
     commands such as {helpb correlate}.
 
 {pstd}
-    {cmd:robmv m} computes an M-estimate of location and covariance using a
+    {cmd:robmv m} computes an M estimate of location and covariance using a
     Huber weighting function as suggested by Lopuha{c a:} (1989). Singular
     solutions are handled as suggested by Maronna et al. (2006, p. 184-185).
 
 {pstd}
-    {cmd:robmv s} computes an S-estimate of
+    {cmd:robmv s} computes an S estimate of
     location and covariance (Lopuha{c a:} 1989) using the FastS algorithm
     as described in Hubert et al. (2013).
 
 {pstd}
-    {cmd:robmv mm} computes an MM-estimate of location and covariance
+    {cmd:robmv mm} computes an MM estimate of location and covariance
     (Salibian-Barrera et al. 2006).
 
 {pstd}
@@ -434,7 +431,7 @@ allowed; see {help weight}.
     tuning constant to k = sqrt(p+1), where p is the number of variables, so
     that the maximum asymptotic breakdown point of bp = min(1/k^2, 1-p/k^2) is
     reached (see Lopuha{c a:} 1989). Note that {cmd:k()} must be larger than
-    sqrt(p) for the M-estimate to exist.
+    sqrt(p) for the M estimate to exist.
 
 {phang}
     {opt ptrim(#)} sets the percentage of winsorizing. If {opt ptrim()} is
@@ -442,7 +439,7 @@ allowed; see {help weight}.
     ptrim/100)), where p is the number of variables. Setting {cmd:ptrim(0)}
     will return the classical location and covariance estimate (no
     winsorizing). Note that {cmd:ptrim()} must be smaller than
-    chi2tail(p,p)*100, where p is the number of variables, for the M-estimate
+    chi2tail(p,p)*100, where p is the number of variables, for the M estimate
     to exist. Only one of {cmd:ptrim()} and {cmd:k()} is allowed.
 
 {dlgtab:Consistency correction}
@@ -467,7 +464,7 @@ allowed; see {help weight}.
     {opt tolerance(#)} sets the tolerance for the reweighting algorithm.
     When the maximum relative change in the location and covariance estimate
     is less than or equal to {cmd:tolerance()}, convergence is
-    achieved. The default is {cmd:tolerance(1e-12)}.
+    achieved. The default is {cmd:tolerance(1e-10)}.
 
 {phang}
     {opt iterate(#)} specifies the maximum number of iterations for the
@@ -487,7 +484,7 @@ allowed; see {help weight}.
 {dlgtab:Main}
 
 {phang}
-    {opt bp(#)} sets the breakdown point (in percent) with # in [1,50]. The 
+    {opt bp(#)} sets the breakdown point (in percent) with # in [1,50]. The
     default is {cmd:bp(50)}.
 
 {phang}{opt whilferty} obtains the tuning constant corresponding to the desired
@@ -501,7 +498,7 @@ allowed; see {help weight}.
     {opt k(#)} sets the tuning constant to a custom value. Only one of
     {cmd:k()} and {cmd:bp()} is allowed. The procedure used to compute the
     breakdown point corresponding to {cmd:k()} depends on whether {cmd:whilferty}
-    is specified.
+    is specified or not.
 
 {dlgtab:Algorithm}
 
@@ -521,7 +518,7 @@ allowed; see {help weight}.
     {opt tolerance(#)} sets the tolerance for the candidate scale refinements
     and the final refinement of the best candidates. When the relative
     change in the scale from one iteration to the next is less than or equal
-    to {cmd:tolerance()}, convergence is achieved. The default is {cmd:tolerance(1e-12)}.
+    to {cmd:tolerance()}, convergence is achieved. The default is {cmd:tolerance(1e-10)}.
 
 {phang}
     {opt iterate(#)} specifies the maximum number of iterations for the candidate scale refinements
@@ -548,8 +545,12 @@ allowed; see {help weight}.
 {title:Additional options for robmv mm}
 
 {phang}
-    {opt efficiency(#)} sets the desired gaussian efficiency (in percent) with # 
+    {opt efficiency(#)} sets the desired gaussian efficiency (in percent) with #
     in [70,100). The default is {cmd:efficiency(95)}.
+
+{phang}
+    {opt location} requests that {cmd:efficiency()} sets the location
+    efficiency. The default is to set the shape efficiency.
 
 {phang}
     {help robmv##s_options:{it:s_options}} are additional options as for {cmd:robreg s}.
@@ -703,6 +704,14 @@ allowed; see {help weight}.
     search algorithm for the best H-subset. The default is {cmd:nsamp(500)}.
 
 {phang}
+    {opt csteps(#)} sets the number of concentration steps (C-steps) applied when
+    evaluating the trial candidates. The default is {cmd:csteps(2)}.
+
+{phang}
+    {opt nkeep(#)} sets the number of best trial candidates kept for final
+    refinement. The default is {cmd:nkeep(10)}.
+
+{phang}
     {opt nsub(#)} specifies the subsample size used by the search algorithm in
     case of a large sample size N. The default is max(p*50, 300), where p is
     the number of variables. If N >= 2*{cmd:nsub()} the algorithm splits the
@@ -736,18 +745,10 @@ allowed; see {help weight}.
     {cmd:ksub(5)}. {cmd:ksub()} must be equal to 2 or larger.
 
 {phang}
-    {opt csteps(#)} sets the number of concentration steps (C-steps) applied when
-    evaluating the trial candidates. The default is {cmd:csteps(2)}.
-
-{phang}
-    {opt nkeep(#)} sets the number of best trial candidates kept for final
-    refinement. The default is {cmd:nkeep(10)}.
-
-{phang}
     {opt tolerance(#)} sets the tolerance for the final refinement of the best
     candidates. When the relative change in the determinant from one iteration
     to the next is less than or equal to {cmd:tolerance()}, convergence is
-    achieved. The default is {cmd:tolerance(1e-12)}.
+    achieved. The default is {cmd:tolerance(1e-10)}.
 
 {phang}
     {opt iterate(#)} specifies the maximum number of iterations for the final
@@ -989,7 +990,7 @@ allowed; see {help weight}.
 {synopt:{cmd:e(V)}}sampling variance of estimates (if {cmd:vce()} was specified){p_end}
 {synopt:{cmd:e(mu)}}location estimates{p_end}
 {synopt:{cmd:e(Cov)}}covariance estimates{p_end}
-{synopt:{cmd:e(Corr)}}correlation estimates (if {cmd:correlation} was specified){p_end}
+{synopt:{cmd:e(Corr)}}correlation estimates{p_end}
 
 {synoptset 20 tabbed}{...}
 {p2col 7 20 24 2: Functions}{p_end}
@@ -1024,11 +1025,12 @@ allowed; see {help weight}.
 {synopt:{cmd:e(nsamp)}}number of trial candidates{p_end}
 {synopt:{cmd:e(csteps)}}number of C-steps for trial candidates{p_end}
 {synopt:{cmd:e(nkeep)}}number of best candidates for final refinement{p_end}
-{synopt:{cmd:e(tolerance)}}tolerance for candidate scale refinement and final refinement{p_end}
-{synopt:{cmd:e(iterate)}}maximum number of iterations for candidate scale refinement and final refinement{p_end}
+{synopt:{cmd:e(tolerance)}}tolerance for refinements{p_end}
+{synopt:{cmd:e(iterate)}}maximum number of iterations for refinements{p_end}
 {synopt:{cmd:e(scale)}}scale estimate{p_end}
 {synopt:{cmd:e(efficiency)}}efficiency, in percent ({cmd:robreg mm} only){p_end}
-{synopt:{cmd:e(k1)}}tuning constant for M estimate ({cmd:robreg mm} only){p_end}
+{synopt:{cmd:e(k_m)}}tuning constant of M step ({cmd:robreg mm} only){p_end}
+{synopt:{cmd:e(niter)}}executed number of M step iterations ({cmd:robreg mm} only){p_end}
 
 {synoptset 20 tabbed}{...}
 {p2col 7 20 24 2: Macros}{p_end}
@@ -1036,6 +1038,7 @@ allowed; see {help weight}.
 {synopt:{cmd:e(noee)}}{cmd:noee} or empty{p_end}
 {synopt:{cmd:e(method)}}{cmd:random} or {cmd:exact}{p_end}
 {synopt:{cmd:e(relax)}}{cmd:relax} or empty{p_end}
+{synopt:{cmd:e(efftype)}}{cmd:shape} or {cmd:location} ({cmd:robreg mm} only){p_end}
 
 {pstd}
 {cmd:robmv mve} additionally stores the following in {cmd:e()}:
@@ -1060,7 +1063,7 @@ allowed; see {help weight}.
 {p2col 7 20 24 2: Matrices}{p_end}
 {synopt:{cmd:e(mu0)}}unscaled raw MVE location estimate{p_end}
 {synopt:{cmd:e(Cov0)}}unscaled raw MVE covariance estimate{p_end}
-{synopt:{cmd:e(Corr0)}}unscaled raw MVE correlation estimate (if {cmd:correlation} was specified){p_end}
+{synopt:{cmd:e(Corr0)}}unscaled raw MVE correlation estimate{p_end}
 {synopt:{cmd:e(gamma)}}coefficients of hyperplane equation (if H-subset is collinear){p_end}
 
 {pstd}
@@ -1098,7 +1101,7 @@ allowed; see {help weight}.
 {p2col 7 20 24 2: Matrices}{p_end}
 {synopt:{cmd:e(mu0)}}unscaled raw MCD location estimate{p_end}
 {synopt:{cmd:e(Cov0)}}unscaled raw MCD covariance estimate{p_end}
-{synopt:{cmd:e(Corr0)}}unscaled raw MCD correlation estimate (if {cmd:correlation} was specified){p_end}
+{synopt:{cmd:e(Corr0)}}unscaled raw MCD correlation estimate{p_end}
 {synopt:{cmd:e(gamma)}}coefficients of hyperplane equation (if H-subset is collinear){p_end}
 
 {pstd}
@@ -1129,7 +1132,7 @@ allowed; see {help weight}.
 
 {pstd}
     If the {cmd:nofit} option is applied, {cmd:robmv sd} will only store a selection
-    of the results.
+    of the above results.
 
 
 {title:References}
@@ -1167,7 +1170,7 @@ allowed; see {help weight}.
 
 {phang}
     Salibian-Barrera, M., S. Van Aelst, G. Willems (2006). Principal Components Analysis
-    Based on Multivariate MM Estimators With Fast and Robust Bootstrap. Journal of 
+    Based on Multivariate MM Estimators With Fast and Robust Bootstrap. Journal of
     the American Statistical Association 101(475):1198-1211.
 
 {phang}
