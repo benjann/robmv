@@ -1,4 +1,4 @@
-*! version 1.0.3  02jan2021  Ben Jann
+*! version 1.0.4  11jan2021  Ben Jann
 
 capt findfile lmoremata.mlib
 if _rc {
@@ -13,15 +13,6 @@ program robmv, eclass properties(svyb svyj)
         exit
     }
     local version : di "version " string(_caller()) ":"
-    gettoken subcmd : 0, parse(", ")
-    if `"`subcmd'"'=="sd" {
-        Check_sd_vce `0'
-    }
-    `version' _vce_parserun robmv, wtypes(pw iw aw fw) noeqlist: `0'
-    if "`s(exit)'" != "" {
-        ereturn local cmdline `"robmv `0'"'
-        exit
-    }
     gettoken subcmd 0 : 0, parse(", ")
     if `"`subcmd'"'==substr("classic", 1, max(2, strlen(`"`subcmd'"'))) {
         local subcmd "classic"
@@ -31,30 +22,49 @@ program robmv, eclass properties(svyb svyj)
         di as err `"invalid subcommand: `subcmd'"'
         exit 198
     }
+    Check_vce `subcmd' `0' // returns 00
+    if `"`00'"'!="" {
+        `version' _vce_parserun robmv, wtypes(pw iw aw fw) noeqlist: `00'
+        ereturn local cmdline `"robmv `subcmd'`0'"'
+        exit
+    }
     Estimate_`subcmd' `0' // returns diopts
     ereturn local cmdline `"robmv `subcmd'`0'"'
     if `"`e(nofit)'"'=="" {
         Display, `diopts'
     }
-    if `"`e(generate)'"'!="" {
+    if `"`e(generate)'`e(ifgenerate)'"'!="" {
         di as txt _n "Stored variables" _c
-        describe `e(generate)', fullnames
+        describe `e(generate)' `e(ifgenerate)', fullnames
         Return_clear
     }
 end
 
-program Check_sd_vce
-    _parse comma anything 0 : 0
-    syntax [, vce(passthru) GENerate(passthru) nofit * ]
-    if `"`vce'"'!="" {
-        if `"`generate'"'!="" {
-            di as err "{bf:vce()} and {bf:generate()} not both allowed"
-            exit 198
-        }
-        if `"`fit'"'!="" {
-            di as err "{bf:vce()} and {bf:nofit} not both allowed"
-            exit 198
-        }
+program Check_vce
+    gettoken subcmd 0 : 0
+    if "`subcmd'"=="sd" local sdopts GENerate(passthru) nofit
+    _parse comma lhs 0 : 0
+    syntax [, vce(str) NOSE `sdopts' * ]
+    _Check_vce `vce'
+    if "`vcetype'"=="" exit
+    if `"`generate'"'!="" {
+        di as err "{bf:vce(`vcetype')} and {bf:generate()} not both allowed"
+        exit 198
+    }
+    if `"`fit'"'!="" {
+        di as err "{bf:vce(`vcetype')} and {bf:nofit} not both allowed"
+        exit 198
+    }
+    c_local 00 `subcmd' `lhs', nose vce(`vce') `options'
+end
+
+program _Check_vce
+    _parse comma vce 0 : 0
+    if `"`vce'"'== substr("bootstrap",1,max(4,strlen(`"`vce'"'))) {
+        c_local vcetype bootstrap
+    }
+    if `"`vce'"'== substr("jackknife",1,max(4,strlen(`"`vce'"'))) {
+        c_local vcetype jackknife
     }
 end
 
@@ -151,9 +161,9 @@ program Display
             exit
         }
         eret di, `level' `options'
-        if e(rank)<e(nvars) {
+        if e(rnk)<e(nvars) {
             di as txt "(covariance matrix is singular; rank = " ///
-                as res e(rank) as txt ")"
+                as res e(rnk) as txt ")"
         }
         if inlist(`"`e(subcmd)'"', "mcd", "mve") {
             if e(nhyper)>0 {
@@ -172,30 +182,110 @@ program Display
     }
 end
 
-program Estimate_classic, eclass
-    // syntax
-    syntax varlist(numeric fv) [if] [in] [pw aw iw fw/], [ ///
-        CORRelation Level(cilevel) noHEader noTABle ///
-        weights(varname) /// undocumented; used by -robmv sd-
-        noRMColl * ]
-    local levelopt level(`level')
-    _get_diopts diopts, `options'
-    c_local diopts `header' `table' `levelopt' `diopts'
-    
-    // sample and weights
-    marksample touse
-    if "`weights'"!="" {
-        markout `touse' `weights'
+program VCE_currently_not_supported
+    args subcmd vceopts
+    if `"`vceopts'"'!="" {
+        di as err "vce(analytic|cluster) and svy() currently not supported by robmv `subcmd'"
+        exit 198
     }
-    if "`weight'"!="" {
-        local exp0 `"= `exp'"'
-        capt confirm variable `exp'
-        if _rc {
-            tempvar exp
-            qui gen double `exp' `exp0'
+    c_local nose nose
+end
+
+program Parse_vcesvy
+    args nose vce svy svy2 weight
+    if `"`vce'"'!="" {
+        if "`nose'"!="" {
+            di as err "vce() and nose not both allowed"
+            exit 198
+        }
+        if `"`svy'`svy2'"'!="" {
+            di as err "vce() and svy() not both allowed"
+            exit 198
+        }
+        gettoken vce clustvar : vce
+        if `"`vce'"'==substr("analytic", 1, max(1, strlen(`"`vce'"'))) & ///
+            `"`clustvar'"'=="" {
+            c_local vce analytic
+        }
+        else if `:list sizeof clustvar'==1 & ///
+            substr("cluster", 1, max(2, strlen(`"`vce'"')))==`"`vce'"' {
+            local clustvar `clustvar' // trim
+            c_local vce cluster
+            c_local vcetype Robust
+            c_local clustvar `clustvar'
+            c_local clustopt cluster(`clustvar')
+        }
+        else {
+            di as err "invalid vce()"
+            exit 198
         }
     }
-    else local exp0
+    else if "`nose'"=="" {
+        c_local vce analytic
+    }
+    if `"`svy'`svy2'"'!="" {
+        if "`weight'"!="" {
+            di as err "weights not allowed with svy; supply weights to {help svyset}"
+            exit 101
+        }
+        if "`nose'"!="" {
+            di as err "svy() and nose not both allowed"
+            exit 198
+        }
+        c_local svy svy
+        if `"`svy2'"'!="" {
+            c_local svy2 `"subpop(`svy2')"'
+        }
+    }
+end
+
+program Setup_svy
+    args touse subpop exp svy2
+    if c(stata_version)>=14 {
+        _svy_setup `touse' `subpop' `exp', svy `svy2'
+        local weight `"`r(wtype)'"'
+        if "`weight'"=="" {
+            drop `exp'
+        }
+    }
+    else {
+        _svy_setup `touse' `subpop', svy `svy2'
+        local weight `"`r(wtype)'"'
+        local exp `"`r(wvar)'"'
+    }
+    if `"`r(vce)'"'!="linearized" {
+        di as err "option svy is only allowed if VCE is set to linearized; " ///
+            `"use the {helpb svy} prefix command for `r(vce)' survey estimation"'
+        exit 498
+    }
+    local svy_posts `"`r(poststrata)'"'
+    local svy_postw `"`r(postweight)'"'
+    if `"`svy_posts'"'!="" {
+        if "`weight'"!="" {
+            tempvar exp0
+            rename `exp' `exp0'
+            local wexp `"[`weight' = `exp0']"'
+        }
+        svygen post double `exp' `wexp' if `touse', ///
+            posts(`svy_posts') postw(`svy_postw')
+        if "`weight'"=="" local weight pweight
+    }
+    c_local weight `weight'
+    if "`weight'"=="" c_local exp ""
+end
+
+program Setup_wgt_and_N
+    args weight exp tmp touse subpop
+    if "`weight'"!="" {
+        c_local exp0 `"= `exp'"'
+        capt confirm variable `exp'
+        if _rc {
+            qui gen double `tmp' = `exp'
+            local exp `tmp'
+            c_local exp `tmp'
+        }
+    }
+    else c_local exp0
     if "`weight'"=="fweight" {
         su `exp' if `touse', meanonly
         local N = r(sum)
@@ -205,13 +295,126 @@ program Estimate_classic, eclass
         local N = r(N)
     }
     if `N'==0 error 2000
+    if `touse'!=`subpop' {
+        qui count if `subpop'
+        if r(N)==0 error 2000
+    }
+    c_local N `N'
+end
+
+program Compute_VCE
+    args IFs wgt touse b V vce clustopt svy svy2 tmpnms
+    if "`svy'"!="" {
+        qui svy, `svy2': mean `IFs' if `touse'
+    }
+    else {
+        qui mean `IFs' `wgt' if `touse', `clustopt'
+    }
+    matrix `V' = e(V)
+    local coln: colfullnames `b'
+    mat coln `V' = `coln'
+    mat rown `V' = `coln'
+    c_local rank = e(rank)
+    c_local df_r = e(df_r)
+    if "`vce'"=="cluster" {
+        c_local N_clust = e(N_clust)
+    }
+    if "`svy'"!="" {
+        local svy_scalars
+        foreach l in N_sub N_strata N_strata_omit singleton census N_pop ///
+                     N_subpop N_psu N_poststrata stages {
+            if e(`l')<. {
+                c_local svy_`l' = e(`l')
+                local svy_scalars `svy_scalars' `l'
+            }
+        }
+        local svy_macros
+        foreach l in prefix wtype wvar wexp singleunit strata psu fpc ///
+                     poststrata postweight vce vcetype mse subpop adjust {
+            c_local svy_`l' `"`e(`l')'"'
+            local svy_macros `svy_macros' `l'
+        }
+        local stages = e(stages)
+        forv l=1/`stages' {
+            c_local svy_su`l' `"`e(su`l')'"'
+            c_local svy_fpc`l' `"`e(fpc`l')'"'
+            c_local svy_weight`l' `"`e(weight`l')'"'
+            c_local svy_strata`l' `"`e(strata`l')'"'
+            local svy_macros `svy_macros' su`l' fpc`l' weight`l' strata`l'
+        }
+        local svy_matrices
+        foreach l in V_srs V_srssub V_srswr V_srssubwr _N_strata_single ///
+            _N_strata_certain _N_strata _N_postsum _N_postsize {
+            gettoken tmpnm tmpnms : tmpnms
+            capt confirm matrix e(`l')
+            if _rc==0 {
+                mat `tmpnm' = e(`l')
+                if substr("`l'", 1, 1)=="V" {
+                    mat coln `tmpnm' = `coln'
+                    mat rown `tmpnm' = `coln'
+                }
+                local svy_matrices `"`svy_matrices' "`l' `tmpnm'""'
+            }
+        }
+        c_local svy_scalars `svy_scalars'
+        c_local svy_macros `svy_macros'
+        c_local svy_matrices `"`svy_matrices'"'
+    }
+end
+
+program LabelMuCov
+    args varlist mu Cov Corr
+    mat coln `mu'   = `varlist'
+    mat coln `Cov'  = `varlist'
+    mat rown `Cov'  = `varlist'
+    mat coln `Corr' = `varlist'
+    mat rown `Corr' = `varlist'
+end
+
+program Compile_b
+    args b mu Cov Corr correlation varlist
+    tempname tmp
+    local C = cond("`correlation'"!="", "`Corr'", "`Cov'")
+    local i 0
+    foreach v of local varlist {
+        local ++i
+        mat `tmp' = `C'[`i', `i'...]
+        mat coleq `tmp' = `v'
+        mat `b' = nullmat(`b'), `tmp'
+    }
+    mat `tmp' = `mu'
+    mat coleq `tmp' = "@location"
+    mat `b' = `b', `tmp'
+end
+
+program Estimate_classic, eclass
+    // syntax
+    syntax varlist(numeric fv) [if] [in] [pw aw iw fw/], [ ///
+        CORRelation Level(cilevel) noHEader noTABle ///
+        vce(str) svy SVY2(str) NOSE IFgenerate(str) Replace ///
+        noRMColl * ]
+    local levelopt level(`level')
+    _get_diopts diopts, `options'
+    c_local diopts `header' `table' `levelopt' `diopts'
+    Parse_vcesvy "`nose'" `"`vce'"' "`svy'" `"`svy2'"' "`weight'"
+    
+    // sample and weights
+    marksample touse
+    if "`clustvar'"!="" markout `touse' `clustvar'
+    if "`svy'"!="" {
+        tempvar subpop exp
+        Setup_svy `touse' `subpop' `exp' `"`svy2'"'
+    }
+    else local subpop `touse'
+    tempvar tmp
+    Setup_wgt_and_N "`weight'" `"`exp'"' `tmp' `touse' `subpop'
     
     // varlist
     if "`rmcoll'"!="" {
-        fvexpand `varlist' if `touse'
+        fvexpand `varlist' if `subpop'
     }
     else {
-        _rmcoll `varlist' if `touse' [`weight'`exp0'], expand
+        _rmcoll `varlist' if `subpop' [`weight'`exp0'], expand
     }
     local varlist "`r(varlist)'"
     local varlist0 "`varlist'"
@@ -219,41 +422,28 @@ program Estimate_classic, eclass
     // compute classic estimate
     tempname mu Cov Corr
     mata: st_classic()  // updates varlist!
-    mat coln `mu'  = `varlist'
-    mat coln `Cov' = `varlist'
-    mat rown `Cov' = `varlist'
-    mat coln `Corr' = `varlist'
-    mat rown `Corr' = `varlist'
-
-    // return results
-    tempname b tmp
-    local target = cond("`correlation'"!="", "Corr", "Cov")
-    local i 0
-    foreach v of local varlist {
-        local ++i
-        mat `tmp' = ``target''[`i', `i'...]
-        mat coleq `tmp' = `v'
-        mat `b' = nullmat(`b'), `tmp'
+    LabelMuCov "`varlist'" `mu' `Cov' `Corr'
+    
+    // compile e(b)
+    tempname b
+    Compile_b `b' `mu' `Cov' `Corr' "`correlation'" "`varlist'"
+    
+    // vce
+    if "`nose'"=="" {
+        tempname V
+        mata: st_local("svytmpnms", invtokens(st_tempname(9)))
+        Compute_VCE "`IFs'" `"[`weight'`exp0']"' `touse' `b' `V' /*
+            */ "`vce'" `"`clustopt'"' "`svy'" `"`svy2'"' /*
+            */ "`svytmpnms'"
     }
-    mat `tmp' = `mu'
-    mat coleq `tmp' = "@location"
-    mat `b' = `b', `tmp'
-    eret post `b' [`weight'`exp0'], esample(`touse') obs(`N')
-    local title             "Classic estimate"
-    eret local title        "`title'"
-    eret local cmd          "robmv"
-    eret local subcmd       "classic"
-    if "`correlation'"!="" eret local depvar "Corr"
-    else                   eret local depvar "Cov"
-    eret local varlist      "`varlist'"
-    eret local varlist0     "`varlist0'" // varlist including base levels
-    eret local correlation  "`correlation'"
-    eret local predict      "robmv_p"
-    eret scalar nvars     = `nvars'
-    eret scalar rank      = `rank'
-    eret matrix mu        = `mu'
-    eret matrix Cov       = `Cov'
-    eret matrix Corr      = `Corr'
+    
+    // return results
+    eret post `b' `V' [`weight'`exp0'], esample(`touse') obs(`N')
+    local title "Classic estimate"
+    if "`svy'"!="" local title "Survey: `title'"
+    mata: Post_std_eret("classic")
+    mata: Post_vce_eret()
+    mata: Post_ifgenerate()
     Return_clear
 end
 
@@ -268,9 +458,10 @@ program Estimate_m, eclass
         TOLerance(real 1e-10)           /// tolerance
         ITERate(integer `c(maxiter)')   /// max number of iterations
         relax                           /// do not return error if failure to converge
+        vce(str) svy SVY2(str) NOSE IFgenerate(str) Replace ///
         /// display options
-        Level(cilevel) noHEader noTABle *           ///
-        ]
+        Level(cilevel) noHEader noTABle * ]
+    VCE_currently_not_supported m `"`vce'`svy'`svy2'"'
     if "`k'"!="" & "`ptrim'"!="" {
         di as err "k() and ptrim() not both allowed"
         exit 198
@@ -278,70 +469,50 @@ program Estimate_m, eclass
     local levelopt level(`level')
     _get_diopts diopts, `options'
     c_local diopts `header' `table' `levelopt' `diopts'
+    Parse_vcesvy "`nose'" `"`vce'"' "`svy'" `"`svy2'"' "`weight'"
     
     // sample and weights
     marksample touse
-    if "`weight'"!="" {
-        local exp0 `"= `exp'"'
-        capt confirm variable `exp'
-        if _rc {
-            tempvar exp
-            qui gen double `exp' `exp0'
-        }
+    if "`clustvar'"!="" markout `touse' `clustvar'
+    if "`svy'"!="" {
+        tempvar subpop exp
+        Setup_svy `touse' `subpop' `exp' `"`svy2'"'
     }
-    else local exp0
-    if "`weight'"=="fweight" {
-        su `exp' if `touse', meanonly
-        local N = r(sum)
-    }
-    else {
-        qui count if `touse'
-        local N = r(N)
-    }
-    if `N'==0 error 2000
+    else local subpop `touse'
+    tempvar tmp
+    Setup_wgt_and_N "`weight'" `"`exp'"' `tmp' `touse' `subpop'
     
     // varlist
-    _rmcoll `varlist' if `touse' [`weight'`exp0'], expand
+    _rmcoll `varlist' if `subpop' [`weight'`exp0'], expand
     local varlist "`r(varlist)'"
     local varlist0 "`varlist'"
     
     // compute m-estimate
     tempname mu Cov Corr K PTRIM BP C
     mata: st_mvM()
-    mat coln `mu'  = `varlist'
-    mat coln `Cov' = `varlist'
-    mat rown `Cov' = `varlist'
-    mat coln `Corr' = `varlist'
-    mat rown `Corr' = `varlist'
-
-    // return results
-    tempname b tmp
-    local target = cond("`correlation'"!="", "Corr", "Cov")
-    local i 0
-    foreach v of local varlist {
-        local ++i
-        mat `tmp' = ``target''[`i', `i'...]
-        mat coleq `tmp' = `v'
-        mat `b' = nullmat(`b'), `tmp'
+    LabelMuCov "`varlist'" `mu' `Cov' `Corr'
+    
+    // compile e(b)
+    tempname b
+    Compile_b `b' `mu' `Cov' `Corr' "`correlation'" "`varlist'"
+    
+    // vce
+    if "`nose'"=="" {
+        tempname V
+        mata: st_local("svytmpnms", invtokens(st_tempname(9)))
+        Compute_VCE "`IFs'" `"[`weight'`exp0']"' `touse' `b' `V' /*
+            */ "`vce'" `"`clustopt'"' "`svy'" `"`svy2'"' /*
+            */ "`svytmpnms'"
     }
-    mat `tmp' = `mu'
-    mat coleq `tmp' = "@location"
-    mat `b' = `b', `tmp'
-    eret post `b' [`weight'`exp0'], esample(`touse') obs(`N')
+    
+    // return results
+    eret post `b' `V' [`weight'`exp0'], esample(`touse') obs(`N')
     local bppct = strofreal(`BP', "%5.3g")
-    eret local title        "Huber M-estimate (`bppct'% BP)"
-    eret local cmd          "robmv"
-    eret local subcmd       "m"
-    if "`correlation'"!="" eret local depvar "Corr"
-    else                   eret local depvar "Cov"
-    eret local varlist      "`varlist'"
-    eret local varlist0     "`varlist0'"
-    eret local correlation  "`correlation'"
+    local title "Huber M-estimate (`bppct'% BP)"
+    if "`svy'"!="" local title "Survey: `title'"
+    mata: Post_std_eret("m")
     eret local cemp         "`cemp'"
     eret local relax        "`relax'"
-    eret local predict      "robmv_p"
-    eret scalar nvars     = `nvars'
-    eret scalar rank      = `rank'
     eret scalar bp        = `BP'
     eret scalar ptrim     = `PTRIM'
     eret scalar k         = `K'
@@ -349,9 +520,8 @@ program Estimate_m, eclass
     eret scalar tolerance = `tolerance'
     eret scalar iterate   = `iterate'
     eret scalar niter     = `niter'
-    eret matrix mu        = `mu'
-    eret matrix Cov       = `Cov'
-    eret matrix Corr      = `Corr'
+    mata: Post_vce_eret()
+    mata: Post_ifgenerate()
     Return_clear
 end
 
@@ -369,12 +539,13 @@ program Estimate_s, eclass
         ITERate(integer `c(maxiter)')   /// max number of iterations
         relax                           /// do not return error if failure to converge
         NOEE                            /// do not use exact enumeration even if comb(N, p+1)<=nsamp()
+        vce(str) svy SVY2(str) NOSE IFgenerate(str) Replace ///
         /// MM-estimation (undocumented)
         _mmefficiency(numlist >=70 <100 max=1) ///
         _mmlocation                            ///
         /// display options
-        Level(cilevel) noHEader noTABle *  ///
-        ]
+        Level(cilevel) noHEader noTABle * ]
+    VCE_currently_not_supported s `"`vce'`svy'`svy2'"'
     if "`k'"!="" & "`bp'"!="" {
         di as err "k() and bp() not both allowed"
         exit 198
@@ -382,61 +553,49 @@ program Estimate_s, eclass
     local levelopt level(`level')
     _get_diopts diopts, `options'
     c_local diopts `header' `table' `levelopt' `diopts'
+    Parse_vcesvy "`nose'" `"`vce'"' "`svy'" `"`svy2'"' "`weight'"
     
     // sample and weights
     marksample touse
-    if "`weight'"!="" {
-        local exp0 `"= `exp'"'
-        capt confirm variable `exp'
-        if _rc {
-            tempvar exp
-            qui gen double `exp' `exp0'
-        }
+    if "`clustvar'"!="" markout `touse' `clustvar'
+    if "`svy'"!="" {
+        tempvar subpop exp
+        Setup_svy `touse' `subpop' `exp' `"`svy2'"'
     }
-    else local exp0
-    if "`weight'"=="fweight" {
-        su `exp' if `touse', meanonly
-        local N = r(sum)
-    }
-    else {
-        qui count if `touse'
-        local N = r(N)
-    }
-    if `N'==0 error 2000
+    else local subpop `touse'
+    tempvar tmp
+    Setup_wgt_and_N "`weight'" `"`exp'"' `tmp' `touse' `subpop'
     
     // varlist
-    _rmcoll `varlist' if `touse' [`weight'`exp0'], expand
+    _rmcoll `varlist' if `subpop' [`weight'`exp0'], expand
     local varlist "`r(varlist)'"
     local varlist0 "`varlist'"
     
     // compute s-estimate
     tempname mu Cov Corr BP K K1 SCALE DELTA EFF
     mata: st_mvS()
-    mat coln `mu'  = `varlist'
-    mat coln `Cov' = `varlist'
-    mat rown `Cov' = `varlist'
-    mat coln `Corr' = `varlist'
-    mat rown `Corr' = `varlist'
-
-    // return results
-    tempname b tmp
-    local target = cond("`correlation'"!="", "Corr", "Cov")
-    local i 0
-    foreach v of local varlist {
-        local ++i
-        mat `tmp' = ``target''[`i', `i'...]
-        mat coleq `tmp' = `v'
-        mat `b' = nullmat(`b'), `tmp'
+    LabelMuCov "`varlist'" `mu' `Cov' `Corr'
+    
+    // compile e(b)
+    tempname b
+    Compile_b `b' `mu' `Cov' `Corr' "`correlation'" "`varlist'"
+    
+    // vce
+    if "`nose'"=="" {
+        tempname V
+        mata: st_local("svytmpnms", invtokens(st_tempname(9)))
+        Compute_VCE "`IFs'" `"[`weight'`exp0']"' `touse' `b' `V' /*
+            */ "`vce'" `"`clustopt'"' "`svy'" `"`svy2'"' /*
+            */ "`svytmpnms'"
     }
-    mat `tmp' = `mu'
-    mat coleq `tmp' = "@location"
-    mat `b' = `b', `tmp'
-    eret post `b' [`weight'`exp0'], esample(`touse') obs(`N')
+    
+    // return results
+    eret post `b' `V' [`weight'`exp0'], esample(`touse') obs(`N')
     local bppct = strofreal(`BP', "%5.3g")
     if "`_mmefficiency'"!="" {
         local effpct = strofreal(`EFF', "%5.3g")
-        eret local title  "MM-estimate (`bppct'% BP; `effpct'% efficiency)"
-        eret local subcmd     "mm"
+        local title  "MM-estimate (`bppct'% BP; `effpct'% efficiency)"
+        mata: Post_std_eret("mm")
         if "`_mmlocation'"!="" eret local efftype "location"
         else                   eret local efftype "shape"
         eret scalar efficiency = `EFF'
@@ -444,23 +603,14 @@ program Estimate_s, eclass
         eret scalar niter      = `niter'
     }
     else {
-        eret local title      "S-estimate (`bppct'% BP)"
-        eret local subcmd     "s"
+        local title "S-estimate (`bppct'% BP)"
+        mata: Post_std_eret("s")
     }
-    eret local cmd          "robmv"
-    if "`correlation'"!="" eret local depvar "Corr"
-    else                   eret local depvar "Cov"
-    eret local varlist      "`varlist'"
-    eret local varlist0     "`varlist0'"
-    eret local correlation  "`correlation'"
     eret local cemp         "`cemp'"
     eret local noee         "`noee'"
     eret local relax        "`relax'"
     eret local method       "`method'"
     eret local whilferty    "`whilferty'"
-    eret local predict      "robmv_p"
-    eret scalar nvars     = `nvars'
-    eret scalar rank      = `rank'
     eret scalar bp        = `BP'
     eret scalar k         = `K'
     eret scalar scale     = `SCALE'
@@ -470,9 +620,8 @@ program Estimate_s, eclass
     eret scalar nkeep     = `nkeep'
     eret scalar tolerance = `tolerance'
     eret scalar iterate   = `iterate'
-    eret matrix mu        = `mu'
-    eret matrix Cov       = `Cov'
-    eret matrix Corr      = `Corr'
+    mata: Post_vce_eret()
+    mata: Post_ifgenerate()
     Return_clear
 end
 
@@ -506,12 +655,14 @@ program Estimate_mcd, eclass
         relax                           /// do not return error if failure to converge
         NOEE                            /// do not use exact enumeration even if comb(N, h)<=nsamp()
         NOUNIvar                        /// use standard algorithm even if p=1
+        vce(str) svy SVY2(str) NOSE IFgenerate(str) Replace ///
         /// display options
-        Level(cilevel) noHEader noTABle *           ///
-        ]
+        Level(cilevel) noHEader noTABle * ]
+    VCE_currently_not_supported mcd `"`vce'`svy'`svy2'"'
     local levelopt level(`level')
     _get_diopts diopts, `options'
     c_local diopts `header' `table' `levelopt' `diopts'
+    Parse_vcesvy "`nose'" `"`vce'"' "`svy'" `"`svy2'"' "`weight'"
     if "`bp'"=="" local bp 50
     if `alpha'<0 | `alpha'>50 {
         di as err "alpha() must be in [0, 50]"
@@ -530,72 +681,54 @@ program Estimate_mcd, eclass
     
     // sample and weights
     marksample touse
-    if "`weight'"!="" {
-        local exp0 `"= `exp'"'
-        capt confirm variable `exp'
-        if _rc {
-            tempvar exp
-            qui gen double `exp' `exp0'
-        }
+    if "`clustvar'"!="" markout `touse' `clustvar'
+    if "`svy'"!="" {
+        tempvar subpop exp
+        Setup_svy `touse' `subpop' `exp' `"`svy2'"'
     }
-    else local exp0
-    qui count if `touse'
-    local N = r(N)
-    if `N'==0 error 2000
+    else local subpop `touse'
+    tempvar tmp
+    Setup_wgt_and_N "`weight'" `"`exp'"' `tmp' `touse' `subpop'
     
     // varlist
-    _rmcoll `varlist' if `touse' [`weight'`exp0'], expand
+    _rmcoll `varlist' if `subpop' [`weight'`exp0'], expand
     local varlist "`r(varlist)'"
     local varlist0 "`varlist'"
     
     // compute mcd
     tempname MCD mu0 mu Cov0 Cov Corr0 Corr h CALPHA SALPHA CDELTA SDELTA gamma
     mata: st_mcd()
-    foreach rtype in "0" "" {
-        mat coln `mu`rtype''  = `varlist'
-        mat coln `Cov`rtype'' = `varlist'
-        mat rown `Cov`rtype'' = `varlist'
-        mat coln `Corr`rtype'' = `varlist'
-        mat rown `Corr`rtype'' = `varlist'
+    LabelMuCov "`varlist'" `mu' `Cov' `Corr'
+    LabelMuCov "`varlist'" `mu0' `Cov0' `Corr0'
+    
+    // compile e(b)
+    tempname b
+    Compile_b `b' `mu' `Cov' `Corr' "`correlation'" "`varlist'"
+    
+    // vce
+    if "`nose'"=="" {
+        tempname V
+        mata: st_local("svytmpnms", invtokens(st_tempname(9)))
+        Compute_VCE "`IFs'" `"[`weight'`exp0']"' `touse' `b' `V' /*
+            */ "`vce'" `"`clustopt'"' "`svy'" `"`svy2'"' /*
+            */ "`svytmpnms'"
     }
-
+    
     // return results
-    tempname b tmp
-    local target = cond("`correlation'"!="", "Corr", "Cov")
-    local i 0
-    foreach v of local varlist {
-        local ++i
-        mat `tmp' = ``target''[`i', `i'...]
-        mat coleq `tmp' = `v'
-        mat `b' = nullmat(`b'), `tmp'
-    }
-    mat `tmp' = `mu'
-    mat coleq `tmp' = "@location"
-    mat `b' = `b', `tmp'
-    eret post `b' [`weight'`exp0'], esample(`touse') obs(`N')
+    eret post `b' `V' [`weight'`exp0'], esample(`touse') obs(`N')
     local title "MCD estimate (`bp'% BP"
     if "`reweight'"=="" {
         local rwpct = strofreal(100-`alpha', "%5.3g")
         local title "`title'; `rwpct'% reweighting)"
     }
     else local title "`title')"
-    eret local title        "`title'"
-    eret local cmd          "robmv"
-    eret local subcmd       "mcd"
-    if "`correlation'"!="" eret local depvar "Corr"
-    else                   eret local depvar "Cov"
-    eret local varlist      "`varlist'"
-    eret local varlist0     "`varlist0'"
-    eret local correlation  "`correlation'"
+    mata: Post_std_eret("mcd")
     eret local noreweight   "`reweight'"
     eret local nosmall      "`small'"
     eret local noee         "`noee'"
     eret local nounivar     "`nounivar'"
     eret local relax        "`relax'"
     eret local method       "`method'"
-    eret local predict      "robmv_p"
-    eret scalar nvars     = `nvars'
-    eret scalar rank      = `rank'
     eret scalar MCD       = `MCD'
     eret scalar h         = `h'
     eret scalar bp        = `bp'
@@ -620,11 +753,11 @@ program Estimate_mcd, eclass
         mat rown `gamma' = `varlist'
         eret matrix gamma = `gamma'
     }
-    foreach rtype in "0" "" {
-        eret matrix mu`rtype'  = `mu`rtype''
-        eret matrix Cov`rtype' = `Cov`rtype''
-        eret matrix Corr`rtype' = `Corr`rtype''
-    }
+    eret matrix mu0  = `mu0'
+    eret matrix Cov0 = `Cov0'
+    eret matrix Corr0 = `Corr0'
+    mata: Post_vce_eret()
+    mata: Post_ifgenerate()
     Return_clear
 end
 
@@ -639,9 +772,13 @@ program Estimate_mve, eclass
         cdelta(numlist max=1)           /// consistency correction factor for reweighted estimate
         Nsamp(int 500)                  /// number of trial candidates
         NOEE                            /// do not use exact enumeration even if comb(N, p+1)<=nsamp()
+        vce(str) svy SVY2(str) NOSE IFgenerate(str) Replace ///
         /// display options
-        Level(cilevel) noHEader noTABle *           ///
-        ]
+        Level(cilevel) noHEader noTABle * ]
+    if `"`vce'`svy'`svy2'"'!="" {
+        di as err "vce(analytic|cluster) and svy() not supported by robmv mve"
+        exit 198
+    }
     local levelopt level(`level')
     _get_diopts diopts, `options'
     c_local diopts `header' `table' `levelopt' `diopts'
@@ -657,18 +794,8 @@ program Estimate_mve, eclass
     
     // sample and weights
     marksample touse
-    if "`weight'"!="" {
-        local exp0 `"= `exp'"'
-        capt confirm variable `exp'
-        if _rc {
-            tempvar exp
-            qui gen double `exp' `exp0'
-        }
-    }
-    else local exp0
-    qui count if `touse'
-    local N = r(N)
-    if `N'==0 error 2000
+    tempvar tmp
+    Setup_wgt_and_N "`weight'" `"`exp'"' `tmp' `touse' `touse'
     
     // varlist
     _rmcoll `varlist' if `touse' [`weight'`exp0'], expand
@@ -678,27 +805,14 @@ program Estimate_mve, eclass
     // compute mcd
     tempname MVE mu0 mu Cov0 Cov Corr0 Corr h gamma CALPHA CDELTA
     mata: st_mve()
-    foreach rtype in "0" "" {
-        mat coln `mu`rtype''  = `varlist'
-        mat coln `Cov`rtype'' = `varlist'
-        mat rown `Cov`rtype'' = `varlist'
-        mat coln `Corr`rtype'' = `varlist'
-        mat rown `Corr`rtype'' = `varlist'
-    }
+    LabelMuCov "`varlist'" `mu' `Cov' `Corr'
+    LabelMuCov "`varlist'" `mu0' `Cov0' `Corr0'
+    
+    // compile e(b)
+    tempname b
+    Compile_b `b' `mu' `Cov' `Corr' "`correlation'" "`varlist'"
 
     // return results
-    tempname b tmp
-    local target = cond("`correlation'"!="", "Corr", "Cov")
-    local i 0
-    foreach v of local varlist {
-        local ++i
-        mat `tmp' = ``target''[`i', `i'...]
-        mat coleq `tmp' = `v'
-        mat `b' = nullmat(`b'), `tmp'
-    }
-    mat `tmp' = `mu'
-    mat coleq `tmp' = "@location"
-    mat `b' = `b', `tmp'
     eret post `b' [`weight'`exp0'], esample(`touse') obs(`N')
     local title "MVE estimate (`bp'% BP"
     if "`reweight'"=="" {
@@ -706,20 +820,10 @@ program Estimate_mve, eclass
         local title "`title'; `rwpct'% reweighting)"
     }
     else local title "`title')"
-    eret local title        "`title'"
-    eret local cmd          "robmv"
-    eret local subcmd       "mve"
-    if "`correlation'"!="" eret local depvar "Corr"
-    else                   eret local depvar "Cov"
-    eret local varlist      "`varlist'"
-    eret local varlist0     "`varlist0'"
-    eret local correlation  "`correlation'"
+    mata: Post_std_eret("mve")
     eret local noreweight   "`reweight'"
     eret local noee         "`noee'"
     eret local method       "`method'"
-    eret local predict      "robmv_p"
-    eret scalar nvars     = `nvars'
-    eret scalar rank      = `rank'
     eret scalar MVE       = `MVE'
     eret scalar h         = `h'
     eret scalar bp        = `bp'
@@ -735,11 +839,9 @@ program Estimate_mve, eclass
         mat rown `gamma' = `varlist'
         eret matrix gamma = `gamma'
     }
-    foreach rtype in "0" "" {
-        eret matrix mu`rtype'  = `mu`rtype''
-        eret matrix Cov`rtype' = `Cov`rtype''
-        eret matrix Corr`rtype' = `Corr`rtype''
-    }
+    eret matrix mu0  = `mu0'
+    eret matrix Cov0 = `Cov0'
+    eret matrix Corr0 = `Corr0'
     Return_clear
 end
 
@@ -758,13 +860,21 @@ program Estimate_sd, eclass
         Huber                             /// Huber type estimate
         CORRelation                       /// report correlations, not covariances
         nofit                             ///
-        GENerate(namelist max=3) Replace  ///
+        GENerate(namelist max=3)          ///
+        vce(str) svy SVY2(str) NOSE IFgenerate(str) Replace ///
         /// display options
-        Level(cilevel) noHEader noTABle * ///
-        ]
+        Level(cilevel) noHEader noTABle * ]
+    VCE_currently_not_supported sd `"`vce'`svy'`svy2'"'
+    if "`fit'"!="" {
+        if `"`vce'`svy'`svy2'"'!="" {
+            di as err "vce(analytic|cluster)/svy() not allowed with {bf:nofit}"
+            exit 198
+        }
+    }
     local levelopt level(`level')
     _get_diopts diopts, `options'
     c_local diopts `header' `table' `levelopt' `diopts'
+    Parse_vcesvy "`nose'" `"`vce'"' "`svy'" `"`svy2'"' "`weight'"
     if `nsamp'<1 {
         di as err "{bf:nsamp()} must be larger than 0"
         exit 198
@@ -794,38 +904,30 @@ program Estimate_sd, eclass
 
     // sample and weights
     marksample touse
-    if "`controls'"!="" {
-        markout `touse' `controls'
+    if "`controls'"!="" markout `touse' `controls'
+    if "`clustvar'"!="" markout `touse' `clustvar'
+    if "`svy'"!="" {
+        tempvar subpop exp
+        Setup_svy `touse' `subpop' `exp' `"`svy2'"'
     }
-    if "`weight'"!="" {
-        local exp0 `"= `exp'"'
-        capt confirm variable `exp'
-        if _rc {
-            tempvar exp
-            qui gen double `exp' `exp0'
-        }
-    }
-    else local exp0
-    if "`weight'"=="fweight" {
-        su `exp' if `touse', meanonly
-        local N = r(sum)
-    }
-    else {
-        qui count if `touse'
-        local N = r(N)
-    }
-    if `N'==0 error 2000
+    else local subpop `touse'
+    tempvar tmp
+    Setup_wgt_and_N "`weight'" `"`exp'"' `tmp' `touse' `subpop'
     
     // varlist
-    _rmcoll `varlist' if `touse' [`weight'`exp0'], expand
-    local varlist "`r(varlist)'"
+    _rmcoll `varlist' if `subpop' [`weight'`exp0'], expand
+    local xvars "`r(varlist)'"
     if "`controls'"!="" {
-        _rmcoll `controls' if `touse' [`weight'`exp0'], expand
+        _rmcoll `controls' if `subpop' [`weight'`exp0'], expand
         local controls "`r(varlist)'"
     }
-    local fitvarlist `varlist'
-    if "`controls_incl'"!="" {
-        local fitvarlist `fitvarlist' `controls'
+    if "`fit'"=="" {
+        if "`controls_incl'"!="" {
+            local varlist `varlist' `controls'
+        }
+        _rmcoll `varlist' if `subpop' [`weight'`exp0'], expand
+        local varlist "`r(varlist)'"
+        local varlist0 "`varlist'"
     }
     
     // compute Stahel-Donoho distance
@@ -883,21 +985,23 @@ program Estimate_sd, eclass
         }
     }
     if "`fit'"=="" {
-        Estimate_classic `fitvarlist' [`weight'`exp0'] if `touse', ///
-            weights(`W') normcoll `correlation'
-        local fitvarlist "`e(varlist)'"
-        local fitvarlist0 "`e(varlist0)'"
-        local rank = e(rank)
-        local nvars = e(nvars)
-        tempname b mu Cov Corr
-        matrix `b'   = e(b)
-        matrix `mu'  = e(mu)
-        matrix `Cov' = e(Cov)
-        matrix `Corr' = e(Corr)
+        local _sdweights `W'
+        tempname mu Cov Corr
+        mata: st_classic()  // updates varlist!
+        LabelMuCov "`varlist'" `mu' `Cov' `Corr'
+        tempname b
+        Compile_b `b' `mu' `Cov' `Corr' "`correlation'" "`varlist'"
+        if "`nose'"=="" {
+            tempname V
+            mata: st_local("svytmpnms", invtokens(st_tempname(9)))
+            Compute_VCE "`IFs'" `"[`weight'`exp0']"' `touse' `b' `V' /*
+                */ "`vce'" `"`clustopt'"' "`svy'" `"`svy2'"' /*
+                */ "`svytmpnms'"
+        }
     }
     
     // post results in e()
-    eret post `b' [`weight'`exp0'], esample(`touse') obs(`N')
+    eret post `b' `V' [`weight'`exp0'], esample(`touse') obs(`N')
     local title             "Stahel-Donoho estimate"
     if "`asymmetric'"!=""   local title "Generalized `title'"
     eret local title        "`title'"
@@ -907,7 +1011,7 @@ program Estimate_sd, eclass
     eret local noee         "`noee'"
     eret local nostd        "`nostd'"
     eret local asymmetric   "`asymmetric'"
-    eret local xvars        "`varlist'"
+    eret local xvars        "`xvars'"
     eret local controls     "`controls'"
     eret local include      "`controls_incl'"
     eret local predict      "robmv_p"
@@ -928,16 +1032,18 @@ program Estimate_sd, eclass
     if "`huber'"!="" eret local wftype "huber"
     else             eret local wftype "rectangle"
     if "`fit'"=="" {
-        eret local varlist      "`fitvarlist'"
-        eret local varlist0     "`fitvarlist0'"
+        eret local varlist      "`varlist'"
+        eret local varlist0     "`varlist0'"
         eret local correlation  "`correlation'"
         if "`correlation'"!="" eret local depvar "Corr"
         else                   eret local depvar "Cov"
         eret scalar nvars = `nvars'
-        eret scalar rank  = `rank'
+        eret scalar rnk   = `rnk'
         eret matrix mu    = `mu'
         eret matrix Cov   = `Cov'
         eret matrix Corr  = `Corr'
+        mata: Post_vce_eret()
+        mata: Post_ifgenerate()
     }
 
     // return Stahel-Donoho distance
@@ -1000,6 +1106,110 @@ mata mata set matastrict on
 mata:
 
 /* ------------------------------------------------------------------------- */
+/* Helper functions called by ado                                            */
+/* ------------------------------------------------------------------------- */
+
+void Post_std_eret(string scalar subcmd)
+{
+    stata(`"eret local title "\`title '""')
+    stata(`"eret local cmd "robmv""')
+    stata(`"eret local subcmd ""'+subcmd+`"""')
+    if (st_local("correlation")!="") stata(`"eret local depvar "Corr""')
+    else                             stata(`"eret local depvar "Cov""')
+    stata(`"eret local varlist "\`varlist'""')
+    stata(`"eret local varlist0 "\`varlist0'""') // varlist including base levels
+    stata(`"eret local correlation "\`correlation'""')
+    stata(`"eret local predict "robmv_p""')
+    stata(`"eret scalar nvars = \`nvars'"')
+    stata(`"eret scalar rnk = \`rnk'"')
+    stata(`"eret matrix mu = \`mu'"')
+    stata(`"eret matrix Cov = \`Cov'"')
+    stata(`"eret matrix Corr = \`Corr'"')
+}
+
+void Post_vce_eret()
+{
+    real scalar      i
+    string rowvector S, s
+    
+    if (st_local("nose")!="") return
+    stata(`"eret local vcetype "\`vcetype'""')
+    stata(`"eret scalar rank = \`rank'"')
+    stata(`"eret scalar df_r = \`df_r'"')
+    //stata(`"eret scalar level = \`level'"')
+    if (st_local("vce")=="cluster") {
+        stata(`"eret local clustvar "\`clustvar'""')
+        stata(`"eret scalar N_clust = \`N_clust'"')
+    }
+    if (st_local("svy")!="") {
+        S = tokens(st_local("svy_scalars"))
+        for (i=cols(S); i; i--) {
+            st_local("l", S[i])
+            stata(`"eret scalar \`l' = \`svy_\`l''"')
+        }
+        S = tokens(st_local("svy_macros"))
+        for (i=cols(S); i; i--) {
+            st_local("l", S[i])
+            stata(`"eret local \`l' "\`svy_\`l''""')
+        }
+        S = tokens(st_local("svy_matrices"))
+        for (i=cols(S); i; i--) {
+            s = tokens(S[i])
+            stata("eret matrix "+s[1]+" = "+s[2])
+        }
+    }
+}
+
+void Post_ifgenerate()
+{
+    real scalar      replace, i, n
+    string scalar    stub
+    string rowvector IFs, gen
+    string matrix    cstripe
+    
+    if (st_local("nose")!="") return
+    gen = st_local("ifgenerate")
+    if (gen=="") return
+    if (substr(gen,-1,1)=="*") {
+        stub = substr(gen,1,strlen(gen)-1)
+        if (st_isname(stub)==0) {
+            printf("{err}'%s' is not a valid name\n", stub)
+            exit(7)
+        }
+    }
+    IFs = tokens(st_local("IFs"))
+    n   = length(IFs)
+    if (stub!="") gen = stub :+ strofreal(1..n)
+    else {
+        gen = tokens(gen)
+        n = min((n, length(gen)))
+        for (i=1;i<=n;i++) {
+            if (st_isname(gen[i])==0) {
+                printf("{err}'%s' is not a valid name\n", gen[i])
+                exit(7)
+            }
+        }
+    }
+    replace = st_local("replace")!=""
+    if (replace==0) {
+        for (i=1;i<=n;i++) {
+            if (_st_varindex(gen[i])<.) {
+                printf("{err}variable {bf:%s} already defined\n", gen[i])
+                exit(110)
+            }
+        }
+    }
+    cstripe = st_matrixcolstripe("e(b)")
+    cstripe = "_b[" :+ cstripe[,1] :+ ":" :+ cstripe[,2] :+ "]"
+    for (i=1;i<=n;i++) {
+        if (_st_varindex(gen[i])<.) st_dropvar(gen[i])
+        st_varrename(IFs[i], gen[i])
+        st_varlabel(gen[i], "Influence function of " + cstripe[i])
+    }
+    st_global("e(ifgenerate)", invtokens(gen[|1\n|]))
+}
+
+/* ------------------------------------------------------------------------- */
 /* Helper functions for progress dots                                        */
 /* ------------------------------------------------------------------------- */
 
@@ -1055,18 +1265,20 @@ void _dot_flush(struct dot_struct scalar dot, real scalar i,
 
 void st_classic()
 {
-    real scalar      n, p, rank
+    real scalar      n, p, rnk
     real rowvector   m
     real colvector   w
     real matrix      X, V
     pragma unset     X
+    real matrix      IF
+    pragma unset     IF
     
     // data
-    robmv_st_view(X, "varlist", "touse") // will update local varlist
+    robmv_st_view(X, "varlist", "subpop") // will update local varlist
     p = cols(X)
     st_local("nvars", strofreal(p))
     if (st_local("weight")!="") {
-        w = st_data(., st_local("exp"), st_local("touse"))
+        w = st_data(., st_local("exp"), st_local("subpop"))
         if (st_local("weight")!="fweight") {
             n = rows(X)
             w = w / sum(w) * n // normalize
@@ -1078,23 +1290,49 @@ void st_classic()
         n = rows(X)
     }
     
-    // take account of weights() option (undocumented; used by -robmv sd-)
-    if (st_local("weights")!="") {
-         w = w :* st_data(., st_local("weights"), st_local("touse"))
+    // undocumented; used by -robmv sd-
+    if (st_local("_sdweights")!="") {
+         w = w :* st_data(., st_local("_sdweights"), st_local("subpop"))
          w = w / sum(w) * n // normalize such that sum(w) = n
     }
-
+    
     // compute raw M estimate and apply consistency correction
     V = meanvariance(X, w)
     m = V[1,.]
     V = editmissing(V[|2,1 \ .,.|],0)
-    rank = p - diag0cnt(invsym(V))
-
+    rnk = p - diag0cnt(invsym(V))
+    
     // return results
-    st_local("rank", strofreal(rank))
+    st_local("rnk", strofreal(rnk))
     st_matrix(st_local("mu"),   m)
     st_matrix(st_local("Cov"),  V)
     st_matrix(st_local("Corr"), robmv_corr(V))
+    
+    // IFs
+    if (st_local("nose")=="") {
+        robmv_init_IF(IF, p)
+        st_classic_IF(IF, X, V, m, n/(n-1))
+        if (st_local("correlation")!="") robmv_corr_IF(IF, V)
+    }
+}
+
+void st_classic_IF(real matrix IF, real matrix X, real matrix V, 
+    real rowvector m, real scalar c)
+{
+    real scalar i, j, p, k
+    
+    p = cols(X)
+    k = 0
+    // covariances
+    for (i=1;i<=p;i++) {
+        for (j=i;j<=p;j++) {
+            IF[,++k] = c * ((X[,i]:-m[i]) :* (X[,j]:-m[j])) :- V[i,j]
+        }
+    }
+    // means
+    for (i=1;i<=p;i++) {
+        IF[,++k] = X[,i] :- m[i]
+    }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1102,7 +1340,7 @@ void st_classic()
 /* ------------------------------------------------------------------------- */
 
 struct mvM_struct {
-    real scalar     n, N, p, rank, wgt, k, ptrim, bp, tol, iter, niter, relax, 
+    real scalar     n, N, p, rnk, wgt, k, ptrim, bp, tol, iter, niter, relax, 
                     c, cemp
     real rowvector  m
     real colvector  w
@@ -1114,15 +1352,17 @@ void st_mvM()
 {
     real scalar rc
     struct mvM_struct scalar S
+    real matrix  IF
+    pragma unset IF
     
     // data 
-    S.X = robmv_st_data("varlist", "touse") // will update local varlist
+    S.X = robmv_st_data("varlist", "subpop") // will update local varlist
     S.p = cols(S.X)
     st_local("nvars", strofreal(S.p))
     S.n = rows(S.X)
     if (S.p>=S.n) exit(error(2001)) // insufficient observations
     if (st_local("weight")!="") {
-        S.w = st_data(., st_local("exp"), st_local("touse"))
+        S.w = st_data(., st_local("exp"), st_local("subpop"))
         S.wgt = 1
         if (st_local("weight")=="fweight") S.N = sum(S.w)
         else {
@@ -1172,14 +1412,14 @@ void st_mvM()
         display("{err}covariance matrix collapsed to zero")
         exit(error(498))
     }
-    S.rank = S.p - diag0cnt(invsym(S.V))
+    S.rnk = S.p - diag0cnt(invsym(S.V))
     if (S.c>=.) {
         S.c = mvM_huber_c(S, S.cemp)
     }
     S.V = S.V * S.c
     
     // return results
-    st_local("rank", strofreal(S.rank))
+    st_local("rnk", strofreal(S.rnk))
     st_numscalar(st_local("K"), S.k)
     st_numscalar(st_local("PTRIM"), S.ptrim*100)
     st_numscalar(st_local("BP"), S.bp*100)
@@ -1188,6 +1428,30 @@ void st_mvM()
     st_matrix(st_local("Cov"),  S.V)
     st_matrix(st_local("Corr"), robmv_corr(S.V))
     st_local("niter", strofreal(S.niter))
+
+    // IFs
+    if (st_local("nose")=="") {
+        robmv_init_IF(IF, S.p)
+        st_mvM_IF(IF, S)
+        if (st_local("correlation")!="") robmv_corr_IF(IF, S.V)
+    }
+}
+
+void st_mvM_IF(real matrix IF, struct mvM_struct scalar S)
+{
+    real scalar    i, j, k
+    
+    k = 0
+    // covariances
+    for (i=1;i<=S.p;i++) {
+        for (j=i;j<=S.p;j++) {
+            IF[,++k] = J(rows(IF), 1, 0)
+        }
+    }
+    // means
+    for (i=1;i<=S.p;i++) {
+        IF[,++k] = J(rows(IF), 1, 0)
+    }
 }
 
 // compute M-estimate estimate
@@ -1300,15 +1564,17 @@ void st_mcd()
     real scalar    rc, salpha, sdelta
     real colvector wt
     struct mcd_struct scalar S
+    real matrix    IF
+    pragma unset   IF
     
     // data
-    S.X = robmv_st_data("varlist", "touse") // will update local varlist
+    S.X = robmv_st_data("varlist", "subpop") // will update local varlist
     S.p = cols(S.X)
     st_local("nvars", strofreal(S.p))
     S.n = rows(S.X)
     if (S.p>=S.n) exit(error(2001)) // insufficient observations
     if (st_local("weight")!="") {
-        S.w = st_data(., st_local("exp"), st_local("touse"))
+        S.w = st_data(., st_local("exp"), st_local("subpop"))
         S.w = S.w / sum(S.w) * S.n // normalize weights so that sum(w)=N
         S.wgt = 1
     }
@@ -1371,7 +1637,7 @@ void st_mcd()
     if (S.nhyper>0) {
         st_matrix(st_local("gamma"), S.gamma)
     }
-    st_local("rank", strofreal(S.R))
+    st_local("rnk", strofreal(S.R))
     
     // if classical estimate
     if (S.method=="classical") {
@@ -1381,6 +1647,11 @@ void st_mcd()
         st_matrix(st_local("mu"),   S.m)
         st_matrix(st_local("Cov"),  S.V)
         st_matrix(st_local("Corr"), robmv_corr(S.V))
+        if (st_local("nose")=="") {
+            robmv_init_IF(IF, S.p)
+            st_mcd_IF(IF, S)
+            if (st_local("correlation")!="") robmv_corr_IF(IF, S.V)
+        }
         return
     }
     
@@ -1409,6 +1680,30 @@ void st_mcd()
     st_matrix(st_local("mu"),   S.m)
     st_matrix(st_local("Cov"),  S.V)
     st_matrix(st_local("Corr"), robmv_corr(S.V))
+    
+    // IFs
+    if (st_local("nose")=="") {
+        robmv_init_IF(IF, S.p)
+        st_mcd_IF(IF, S)
+        if (st_local("correlation")!="") robmv_corr_IF(IF, S.V)
+    }
+}
+
+void st_mcd_IF(real matrix IF, struct mcd_struct scalar S)
+{
+    real scalar    i, j, k
+    
+    k = 0
+    // covariances
+    for (i=1;i<=S.p;i++) {
+        for (j=i;j<=S.p;j++) {
+            IF[,++k] = J(rows(IF), 1, 0)
+        }
+    }
+    // means
+    for (i=1;i<=S.p;i++) {
+        IF[,++k] = J(rows(IF), 1, 0)
+    }
 }
 
 // compute initial (raw and uncorrected) MCD estimate
@@ -2245,7 +2540,7 @@ void st_mve()
     if (S.nhyper>0) {
         st_matrix(st_local("gamma"), S.gamma)
     }
-    st_local("rank", strofreal(S.R))
+    st_local("rnk", strofreal(S.R))
     
     // if classical estimate
     if (S.method=="classical") {
@@ -2389,17 +2684,19 @@ real scalar mve_random(struct mcd_struct scalar S)
 // collect data and options, estimate, and return results to Stata
 void st_mvS()
 {
-    real scalar    rc
+    real scalar  rc
     struct mcd_struct scalar S
+    real matrix  IF
+    pragma unset IF
     
     // data 
-    S.X = robmv_st_data("varlist", "touse") // will update local varlist
+    S.X = robmv_st_data("varlist", "subpop") // will update local varlist
     S.p = cols(S.X)
     st_local("nvars", strofreal(S.p))
     S.n = rows(S.X)
     if (S.p>=S.n) exit(error(2001)) // insufficient observations
     if (st_local("weight")!="") {
-        S.w = st_data(., st_local("exp"), st_local("touse"))
+        S.w = st_data(., st_local("exp"), st_local("subpop"))
         if (st_local("weight")!="fweight") S.w = S.w / sum(S.w) * S.n // normalize
         S.wgt = 1
     }
@@ -2472,8 +2769,32 @@ void st_mvS()
     st_numscalar(st_local("DELTA"), S.b)
     st_matrix(st_local("mu"), S.m)
     st_matrix(st_local("Cov"), S.V)
-    st_local("rank", strofreal(S.R))
+    st_local("rnk", strofreal(S.R))
     st_matrix(st_local("Corr"), robmv_corr(S.V))
+    
+    // IFs
+    if (st_local("nose")=="") {
+        robmv_init_IF(IF, S.p)
+        st_mvS_IF(IF, S)
+        if (st_local("correlation")!="") robmv_corr_IF(IF, S.V)
+    }
+}
+
+void st_mvS_IF(real matrix IF, struct mcd_struct scalar S)
+{
+    real scalar    i, j, k
+    
+    k = 0
+    // covariances
+    for (i=1;i<=S.p;i++) {
+        for (j=i;j<=S.p;j++) {
+            IF[,++k] = J(rows(IF), 1, 0)
+        }
+    }
+    // means
+    for (i=1;i<=S.p;i++) {
+        IF[,++k] = J(rows(IF), 1, 0)
+    }
 }
 
 // find tuning constant from breakdown point
@@ -2840,16 +3161,16 @@ void st_sd_distance()
     
     // data
     if (st_local("weight")!="") {
-        w = st_data(., st_local("exp"), st_local("touse"))
+        w = st_data(., st_local("exp"), st_local("subpop"))
         if (st_local("weight")!="fweight") w = w / sum(w) * rows(w) // normalize
     }
     else w = 1
-    X = robmv_st_data("varlist", "touse") // updates local varlist
+    X = robmv_st_data("xvars", "subpop") // updates local xvars
     if (st_local("std")=="") sd_standardize(X, w)
     p = cols(X)
     st_local("nxvars", strofreal(p))
     if (st_local("controls")!="") {
-        C = &robmv_st_data("controls", "touse"), // updates local controls
+        C = &robmv_st_data("controls", "subpop"), // updates local controls
             &(st_local("controls_k")!="" ? strtoreal(st_local("controls_k")) : 
                 mm_huber_k(strtoreal(st_local("controls_eff")))),
             &strtoreal(st_local("controls_tol")),
@@ -2888,7 +3209,7 @@ void st_sd_distance()
     nskip = 0
     sd_distance(D, X, w, nsamp, P, ee, st_local("asymmetric")!="", C, 
         strtoreal(st_local("nmax")), nskip, st_local("expand")!="")
-    st_store(., st_local("D"), st_local("touse"), D)
+    st_store(., st_local("D"), st_local("subpop"), D)
     st_local("nskip", strofreal(nskip))
 }
 
@@ -3138,17 +3459,20 @@ real rowvector indx_non_omitted(string rowvector varlist)
     return(select(1..c, st_matrix("r(omit)"):==0))
 }
 
-// compute (squared) Mahalanobis distance
-real colvector robmv_maha(real matrix X, real rowvector m, real matrix V) 
+// setup tempvars for influence functions
+void robmv_init_IF(real matrix IF, real scalar p)
 {
-    return(_robmv_maha(X, m, invsym(V)))
-}
-real colvector _robmv_maha(real matrix X, real rowvector m, real matrix inv)
-{
-    real matrix Xm
+    real scalar n
+    string rowvector vnm
 
-    Xm = (X:-m)
-    return(rowsum((Xm * inv) :* Xm, 1))
+    n = p * (p + 1)/2 + p
+    vnm = st_tempname(n)
+    st_local("IFs", invtokens(vnm))
+    st_view(IF, ., st_addvar("double", vnm), st_local("touse"))
+    if (st_local("subpop")!=st_local("touse")) {
+        IF[.,.] = J(rows(IF), n, 0)
+        st_view(IF, ., vnm, st_local("subpop"))
+    }
 }
 
 // compute correlation matrix from covariance matrix
@@ -3170,6 +3494,57 @@ real matrix robmv_corr(real matrix V)
         }
     }
     return(C)
+}
+
+// transform influence functions (Cov -> Corr)
+void robmv_corr_IF(real matrix IF, real matrix V)
+{
+    real scalar    i, j, k, p, n, sdi, sdj
+    real colvector sd
+    real matrix    IFsd
+    
+    n  = rows(IF)
+    p  = cols(V)
+    // standard deviations
+    sd = sqrt(diagonal(V))
+    IFsd = J(n,p,0)
+    k = 0
+    for (i=1; i<=p; i++) {
+        for (j=i; j<=p; j++) {
+            k++
+            if (j!=i) continue
+            IFsd[,i] = IF[,k] / (2*sd[i])
+            IF[,k]   = J(n,1,0)
+        }
+    }
+    // correlations
+    k = 0
+    for (i=1; i<=p; i++) {
+        sdi = sd[i]
+        for (j=i; j<=p; j++) {
+            k++
+            if (j==i) continue
+            sdj = sd[j]
+            if (sdi*sdj==0) IF[,k] = J(n,1,0)
+            else {
+                IF[,k] = (IF[,k] - V[i,j]*(IFsd[,i]/sdi + IFsd[,j]/sdj)) / 
+                         (sdi*sdj)
+            }
+        }
+    }
+}
+
+// compute (squared) Mahalanobis distance
+real colvector robmv_maha(real matrix X, real rowvector m, real matrix V) 
+{
+    return(_robmv_maha(X, m, invsym(V)))
+}
+real colvector _robmv_maha(real matrix X, real rowvector m, real matrix inv)
+{
+    real matrix Xm
+
+    Xm = (X:-m)
+    return(rowsum((Xm * inv) :* Xm, 1))
 }
 
 // get random subset of size p (without replacement)

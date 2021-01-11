@@ -1,5 +1,5 @@
 {smcl}
-{* 02jan2021}{...}
+{* 11jan2021}{...}
 {hi:help robmv}{...}
 {right:{browse "http://github.com/benjann/robmv/"}}
 {hline}
@@ -76,7 +76,20 @@ not allow {opt fweight}s)
 
 {syntab :Standard errors/CIs}
 {synopt :{cmd:vce(}{help robmv##vcetype:{it:vcetype}}{cmd:)}}{it:vcetype} may
-    be {cmdab:boot:strap} or {cmdab:jack:knife}
+    be {cmdab:a:nalytic} (the default), {cmdab:cl:uster} {it:clustvar},
+    {cmdab:boot:strap} or {cmdab:jack:knife}
+    {p_end}
+{synopt :{cmd:svy}[{cmd:(}{help robstat##svy:{it:subpop}}{cmd:)}]}take account
+    of survey design as set by {helpb svyset}, optionally restricting
+    computations to {it:subpop}
+    {p_end}
+{synopt :{opt nose}}suppress computation of standard errors and confidence
+    intervals
+    {p_end}
+{synopt :{cmdab:if:generate(}{help robmv##ifgen:{it:names}}{cmd:)}}stores the values of the
+    influence functions
+    {p_end}
+{synopt :{opt r:eplace}}allows overwriting existing variables
     {p_end}
 
 {syntab :Reporting}
@@ -385,11 +398,65 @@ not allow {opt fweight}s)
 {marker vcetype}{...}
 {phang}
     {opth vce(vcetype)} determines how standard errors and confidence intervals
-    are computed. The default is not to compute standard errors and confidence
-    intervals. {it:vcetype} may be
+    are computed. {it:vcetype} may be
 
+            {cmd:analytic}
+            {cmd:cluster} {it:clustvar}
             {cmd:bootstrap} [{cmd:,} {help bootstrap:{it:bootstrap_options}}]
             {cmd:jackknife} [{cmd:,} {help jackknife:{it:jackknife_options}}]
+
+{pmore}
+    {cmd:vce(analytic)}, the default, computes standard errors based on influence
+    functions. Likewise, {cmd:vce(cluster} {it:clustvar}{cmd:)} computes standard
+    errors based on influence function allowing for intragroup correlation,
+    where {it:clustvar} specifies to which group each observation belongs. For
+    bootstrap and jackknife estimation, see help {it:{help vce_option}}.
+
+{pmore}
+    Currently, {cmd:vce(analytic)} and {cmd:vce(cluster)} are only supported by
+    {cmd:robmv classic}. No standard errors will be estimated by the other
+    subcommands.
+
+{phang}
+    {cmd:svy}[{cmd:(}{it:subpop}{cmd:)}] causes the survey design to be taken
+    into account for variance estimation. The data need to be set up for survey
+    estimation; see help {helpb svyset}. Only one of {cmd:svy()} and {cmd:vce()}
+    is allowed. Specify {it:subpop} to restrict survey
+    estimation to a subpopulation, where {it:subpop} is
+
+            [{varname}] [{it:{help if}}]
+
+{pmore}
+    The subpopulation is defined by observations for which {it:varname}!=0 and
+    for which the {cmd:if} condition is met. See help {helpb svy} and
+    {manlink SVY subpopulation estimation} for more information on subpopulation
+    estimation.
+
+{pmore}
+    The {cmd:svy} option of {cmd:robmv} only works if the variance
+    estimation method is set to Taylor linearization by {helpb svyset} (the
+    default). For other variance estimation methods you can use the usual {helpb svy}
+    prefix command.
+
+{pmore}
+    Currently, {cmd:svy()} is only supported by
+    {cmd:robmv classic}. No standard errors will be estimated by the other
+    subcommands.
+
+{phang}
+    {opt nose} suppresses the computation of standard errors and confidence
+    intervals.
+
+{marker ifgen}{...}
+{phang}
+    {opt ifgenerate(names)} stores the influence functions that were used
+    to compute the standard errors, where {it:names} is either a list of (new) variable names
+    or {help newvarlist##stub*:{it:stub}}{cmd:*} to create names {it:stub}{cmd:1},
+    {it:stub}{cmd:2}, etc. {cmd:ifgenerate()} has no effect if specified together
+    with {cmd:nose}, {cmd:vce(bootstrap)}, or {cmd:vce(jackknife)}.
+
+{phang}
+    {opt replace} allows {cmd:ifgenerate()} to overwrite existing variables.
 
 {dlgtab:Reporting}
 
@@ -965,7 +1032,10 @@ not allow {opt fweight}s)
 {p2col 7 20 24 2: Scalars}{p_end}
 {synopt:{cmd:e(N)}}number of observations{p_end}
 {synopt:{cmd:e(nvars)}}number of variables included in the location and covariance estimate{p_end}
-{synopt:{cmd:e(rank)}}rank of covariance matrix{p_end}
+{synopt:{cmd:e(rnk)}}rank of covariance matrix{p_end}
+{synopt:{cmd:e(N_clust)}}number of clusters (only if {cmd:vce(cluster)} is specified){p_end}
+{synopt:{cmd:e(df_r)}}sample degrees of freedom (only if {cmd:e(V)} is stored){p_end}
+{synopt:{cmd:e(rank)}}rank of {cmd:e(V)}{p_end}
 
 {synoptset 20 tabbed}{...}
 {p2col 7 20 24 2: Macros}{p_end}
@@ -981,13 +1051,14 @@ not allow {opt fweight}s)
 {synopt:{cmd:e(wexp)}}weight expression{p_end}
 {synopt:{cmd:e(vce)}}{it:vcetype} specified in {cmd:vce()}{p_end}
 {synopt:{cmd:e(vcetype)}}title used to label Std. Err.{p_end}
+{synopt:{cmd:e(clustvar)}}name of cluster variable{p_end}
 {synopt:{cmd:e(title)}}title in estimation output{p_end}
 {synopt:{cmd:e(properties)}}{cmd:b V} or {cmd:b}{p_end}
 
 {synoptset 20 tabbed}{...}
 {p2col 7 20 24 2: Matrices}{p_end}
 {synopt:{cmd:e(b)}}estimates{p_end}
-{synopt:{cmd:e(V)}}sampling variance of estimates (if {cmd:vce()} was specified){p_end}
+{synopt:{cmd:e(V)}}sampling variance of estimates (only if supported){p_end}
 {synopt:{cmd:e(mu)}}location estimates{p_end}
 {synopt:{cmd:e(Cov)}}covariance estimates{p_end}
 {synopt:{cmd:e(Corr)}}correlation estimates{p_end}
@@ -1131,8 +1202,12 @@ not allow {opt fweight}s)
 {synopt:{cmd:e(generate)}}names of generated variables{p_end}
 
 {pstd}
-    If the {cmd:nofit} option is applied, {cmd:robmv sd} will only store a selection
-    of the above results.
+    If {cmd:robmv sd} is specified with option {cmd:nofit}, only a reduced set
+    of results is stored.
+
+{pstd}
+    If the {cmd:svy} option is specified, various additional results as described in
+    help {helpb svy} are stored.
 
 
 {title:References}

@@ -19,6 +19,11 @@ or
 
 Main changes:
 
+    11jan2021 (version 1.0.4)
+    - -robmv classic- now estimates standard errors and conficence intervals based
+      in influence functions; see options -vce()- and -svy()-; influence functions
+      can be stored using -ifgenerate()-
+
     02jan2021 (version 1.0.3)
     - robmv mm now has a -location- option
     - correlation matrix is now always returned in e(Corr)
