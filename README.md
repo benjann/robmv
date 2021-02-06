@@ -19,9 +19,13 @@ or
 
 Main changes:
 
+    06feb2021 (version 1.0.5)
+    - commands -robmv m-, -robmv s-, and -robmv mm- now support standard error
+      estimation based on influence functions
+
     11jan2021 (version 1.0.4)
     - -robmv classic- now estimates standard errors and conficence intervals based
-      in influence functions; see options -vce()- and -svy()-; influence functions
+      on influence functions; see options -vce()- and -svy()-; influence functions
       can be stored using -ifgenerate()-
 
     02jan2021 (version 1.0.3)
